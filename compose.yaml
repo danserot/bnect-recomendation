@@ -1,0 +1,18 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.1-pg17
+    environment:
+      POSTGRES_USER: bnect
+      POSTGRES_PASSWORD: bnect_local_demo
+      POSTGRES_DB: bnect_demo
+    ports:
+      - '127.0.0.1:55432:5432'
+    volumes:
+      - bnect_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bnect -d bnect_demo']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  bnect_pgdata:

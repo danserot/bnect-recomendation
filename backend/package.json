@@ -1,0 +1,34 @@
+{
+  "name": "@bnect/backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/backend/src/server.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run tests/runtime.integration.test.ts",
+    "db:migrate": "tsx src/cli.ts migrate",
+    "db:seed": "tsx src/cli.ts seed",
+    "db:index": "tsx src/cli.ts index",
+    "db:reindex": "tsx src/cli.ts reindex",
+    "db:import": "tsx src/cli.ts import"
+  },
+  "dependencies": {
+    "@bnect/shared": "1.0.0",
+    "@huggingface/transformers": "3.8.1",
+    "csv-parse": "6.1.0",
+    "dotenv": "17.2.3",
+    "exceljs": "4.4.0",
+    "fastify": "5.6.2",
+    "pg": "8.16.3",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@types/pg": "8.15.5",
+    "tsx": "4.20.6",
+    "vitest": "3.2.4"
+  }
+}

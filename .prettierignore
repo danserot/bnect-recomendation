@@ -1,0 +1,7 @@
+node_modules
+dist
+.cache
+.npm-cache
+output
+.playwright-cli
+package-lock.json
