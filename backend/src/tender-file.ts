@@ -45,7 +45,9 @@ export function watchTenderFile(
           rows: parsed.totalRows,
           errors: parsed.errors.slice(0, 30),
         });
-        log(`Импорт отменён: ${JSON.stringify(parsed.errors)}`);
+        log(
+          `Импорт отменён: ошибок ${parsed.errors.length}. Подробности доступны только в локальном интерфейсе.`,
+        );
         return;
       }
       update('importing', `Загружаем ${parsed.tenders.length} тендеров из Excel…`, {

@@ -9,3 +9,14 @@ output/
 .playwright-cli/
 *.tsbuildinfo
 *.log
+
+# Confidential input files stay on this machine, including future workbooks.
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+data/*.csv
+!data/*.example.csv
+backups/
+*.dump
+.playwright/

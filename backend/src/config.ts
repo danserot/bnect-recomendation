@@ -33,6 +33,13 @@ export const config = {
   demoNow: process.env.DEMO_NOW ?? '2026-10-23T09:00:00.000Z',
 } as const;
 
+if (!['127.0.0.1', 'localhost', '::1'].includes(config.host))
+  throw new Error('Конфиденциальный локальный режим: HOST должен указывать на loopback.');
+if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(config.databaseUrl).hostname))
+  throw new Error(
+    'Конфиденциальный локальный режим: PostgreSQL должен находиться на этом компьютере.',
+  );
+
 if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535)
   throw new Error('PORT должен быть целым числом от 1 до 65535.');
 if (!Number.isInteger(config.batchSize))

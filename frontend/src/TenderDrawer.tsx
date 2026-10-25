@@ -179,14 +179,25 @@ export default function TenderDrawer({
                 : 'Дата создания не является сроком подачи заявок.'}
             </Notice>
           </section>
-      <div className="section-heading">
+          <div className="section-heading">
             <h2>
               Похожие закупки
               {current?.data && <span className="count">{current.data.results.length}</span>}
             </h2>
           </div>
-      <p className="small muted">Подбор по виду работ из источника и смыслу предмета. Повторные предметы и объекты пропускаются; если разных подходящих закупок меньше пяти, показываем фактическое число.</p>
-      {!current || current.loading ? (
+          <p className="small muted">
+            {tender.regionId ? (
+              <>
+                <strong>Только регион: {regionName(tender, catalog)}.</strong>{' '}
+              </>
+            ) : (
+              'Регион тендера не определён — подбор недоступен. '
+            )}
+            Подбор по виду работ из источника и смыслу предмета. Повторные предметы и объекты
+            пропускаются; если подходящих закупок меньше пяти, показываем фактическое число без
+            добавления других регионов.
+          </p>
+          {!current || current.loading ? (
             <Loading text="Ищем похожие закупки…" />
           ) : current.error ? (
             <Empty
@@ -246,7 +257,9 @@ export default function TenderDrawer({
               </div>
             ) : (
               <Empty title="Похожие закупки не найдены">
-                В базе пока недостаточно тендеров для этой подборки.
+                {tender.regionId
+                  ? `В регионе «${regionName(tender, catalog)}» нет подходящих закупок. Другие регионы не добавляются.`
+                  : 'Укажите корректный регион в Excel и дождитесь обновления каталога.'}
               </Empty>
             ))
           )}

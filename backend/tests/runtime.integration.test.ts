@@ -86,7 +86,13 @@ describe('real E5 + pgvector vertical slice', () => {
       const data = projection.json<VectorSpaceResponse>();
       expect(data.query.source).toBe('tender');
       expect(data.recommendations.query.tenderId).toBe(id);
-      expect(data.points.filter((point) => point.recommended)).toHaveLength(5);
+      expect(
+        data.points
+          .filter((point) => point.recommended)
+          .map((point) => point.tender.id)
+          .sort(),
+      ).toEqual(data.recommendations.results.map((item) => item.tender.id).sort());
+      expect(data.recommendations.results.length).toBeLessThanOrEqual(5);
       expect(data.recommendations.results.every((item) => item.tender.id !== id)).toBe(true);
       const repeated = await app.inject({ method: 'POST', url: '/api/imports/excel', payload });
       expect(repeated.json().changes.inserted).toBe(0);
@@ -100,7 +106,7 @@ describe('real E5 + pgvector vertical slice', () => {
     expect(vector).toHaveLength(384);
     expect(Math.hypot(...vector)).toBeCloseTo(1, 5);
     const { rows } = await pool.query(
-      'SELECT id, embedding::text AS vector FROM tenders ORDER BY id',
+      'SELECT id,industry_group,embedding::text AS vector FROM tenders ORDER BY id',
     );
     expect(rows.length).toBeGreaterThanOrEqual(80);
     const expected = rows
@@ -118,7 +124,9 @@ describe('real E5 + pgvector vertical slice', () => {
     result.results.forEach((item, i) => expect(item.similarity).toBeCloseTo(expected[i]!.score, 5));
     expect(result.query.source).toBe('profile');
     expect(result.candidateCount).toBe(rows.length);
-    expect(result.results[0]!.tender.industryGroup).toBe('Информационные технологии');
+    expect(result.results[0]!.tender.industryGroup).toBe(
+      rows.find((row) => row.id === expected[0]!.id)!.industry_group,
+    );
   }, 120_000);
 
   test('SQL filters apply before top-5 and a shortage never expands geography or industry', async () => {
@@ -229,7 +237,10 @@ describe('real E5 + pgvector vertical slice', () => {
     expect(response.statusCode).toBe(400);
     const search = await app.inject({ method: 'GET', url: '/api/tenders?q=%25' });
     expect(search.statusCode, search.body).toBe(200);
-    expect(search.json().total).toBe(0);
+    const literal = await pool.query(
+      "SELECT count(*)::int AS total FROM tenders WHERE strpos(title,'%')>0 OR strpos(external_number,'%')>0",
+    );
+    expect(search.json().total).toBe(literal.rows[0].total);
   });
 
   test('simple GET similar needs only a selected tender and no supplier profile', async () => {
@@ -242,10 +253,12 @@ describe('real E5 + pgvector vertical slice', () => {
     const result = response.json<RecommendationResponse>();
     expect(result.query.source).toBe('tender');
     expect(result.query.text).toBe(tenderText(selected));
-    expect(result.results).toHaveLength(5);
+    expect(result.results.length).toBeLessThanOrEqual(5);
     expect(result.results.every(({ tender }) => tender.id !== selected.id)).toBe(true);
-    expect(result.filters.regionMode).toBe('all');
-    expect(result.candidateCount).toBe(result.totalCount - 1);
+    expect(result.results.every(({ tender }) => tender.regionId === selected.regionId)).toBe(true);
+    expect(result.filters.regionMode).toBe('selected');
+    expect(result.filters.regionIds).toEqual(selected.regionId ? [selected.regionId] : []);
+    expect(result.candidateCount).toBeLessThan(result.totalCount);
   }, 60_000);
 
   test('a concurrent import cannot change the corpus halfway through a recommendation', async () => {

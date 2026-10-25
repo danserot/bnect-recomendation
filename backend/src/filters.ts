@@ -82,6 +82,22 @@ export function isEligible(
   return true;
 }
 
+/** Geography is a hard constraint for similar tenders, including legacy POST requests. */
+export function restrictToTenderRegion(tender: Tender, filters: ResolvedFilters): ResolvedFilters {
+  const region = regions.find(({ id }) => id === tender.regionId);
+  const regionIds =
+    region && (filters.regionMode === 'all' || filters.regionIds.includes(region.id))
+      ? [region.id]
+      : [];
+  return {
+    ...filters,
+    regionMode: 'selected',
+    selectedRegionIds: regionIds,
+    regionIds,
+    regionNames: regionIds.map(() => region!.name),
+  };
+}
+
 export function availability(tender: Tender): string {
   if (!tender.status || !tender.applicationDeadline) return 'Доступность участия неизвестна';
   const expired =
@@ -91,6 +107,8 @@ export function availability(tender: Tender): string {
 }
 
 export function regionalDescription(filters: ResolvedFilters): string {
+  if (filters.regionMode !== 'all' && !filters.regionIds.length)
+    return 'Нет регионов для подбора: регион тендера неизвестен или исключён фильтром.';
   return filters.regionMode === 'all'
     ? 'Все регионы, включая неизвестные'
     : `${filters.regionMode === 'supplier' ? 'Регионы поставщика' : 'Выбранные регионы'}: ${filters.regionNames.join(', ')}`;

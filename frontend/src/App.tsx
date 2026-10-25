@@ -6,13 +6,14 @@ import TenderDrawer from './TenderDrawer';
 import { Loading, Notice } from './ui';
 import TenderMap from './TenderMap';
 import Description from './Description';
+import PurchaseAnalyticsPage from './analytics/PurchaseAnalyticsPage';
 
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
-  const [tab, setTab] = useState<'catalog' | 'map' | 'description'>('catalog');
+  const [tab, setTab] = useState<'catalog' | 'map' | 'description' | 'analytics'>('catalog');
   const [mapTenderId, setMapTenderId] = useState<string>();
   const [importStatus, setImportStatus] = useState<{
     stage: string;
@@ -76,6 +77,7 @@ export default function App() {
             {(
               [
                 ['catalog', 'Закупки'],
+                ['analytics', 'Аналитика закупок'],
                 ['map', 'Векторное пространство'],
                 ['description', 'Как это работает'],
               ] as const
@@ -84,6 +86,7 @@ export default function App() {
                 className={`nav-button ${tab === id ? 'active' : ''}`}
                 key={id}
                 onClick={() => setTab(id)}
+                aria-current={tab === id ? 'page' : undefined}
               >
                 {label}
               </button>
@@ -92,8 +95,8 @@ export default function App() {
           <span className="demo-badge">Прототип</span>
         </div>
       </header>
-      <main className="main simple-main">
-        {importStatus && importStatus.stage !== 'waiting' && (
+      <main className={`main simple-main ${tab === 'analytics' ? 'analytics-main' : ''}`}>
+        {tab !== 'analytics' && importStatus && importStatus.stage !== 'waiting' && (
           <div style={{ marginBottom: 18 }}>
             <Notice kind={importStatus.stage === 'error' ? 'error' : 'info'}>
               {importStatus.message}
@@ -115,7 +118,9 @@ export default function App() {
             </div>
           </div>
         )}
-        {error ? (
+        {tab === 'analytics' ? (
+          <PurchaseAnalyticsPage />
+        ) : error ? (
           <section className="panel boot-error">
             <h2>Не удалось загрузить закупки</h2>
             <p>{error}</p>

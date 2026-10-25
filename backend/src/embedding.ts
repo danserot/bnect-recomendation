@@ -37,11 +37,13 @@ export class LocalE5EmbeddingProvider implements EmbeddingProvider {
       this.modelPromise = (async () => {
         const { pipeline, env } = await import('@huggingface/transformers');
         env.cacheDir = config.cacheDir;
+        env.allowRemoteModels = false;
         // The published Xenova ONNX model supports quantized CPU inference.
         const extractor = await pipeline('feature-extraction', config.modelId, {
           dtype: 'q8',
           device: 'cpu',
           revision: config.modelRevision,
+          local_files_only: true,
         });
         this.state = 'ready';
         return extractor as unknown as Extractor;
@@ -52,7 +54,7 @@ export class LocalE5EmbeddingProvider implements EmbeddingProvider {
         throw new AppError(
           503,
           'MODEL_UNAVAILABLE',
-          'Не удалось загрузить embedding-модель. Проверьте доступ к Hugging Face и к каталогу кеша. Фиктивный поиск не используется.',
+          'Локальная embedding-модель недоступна. Проверьте файлы модели в .cache/models. Сетевая загрузка отключена.',
           { reason: this.lastError },
         );
       });

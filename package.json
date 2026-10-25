@@ -19,6 +19,8 @@
     "db:index": "npm run db:index -w backend",
     "db:reindex": "npm run db:reindex -w backend",
     "db:import": "tsx backend/src/cli.ts import",
+    "analytics:import": "tsx backend/src/analytics/import-cli.ts",
+    "test:analytics": "npm exec -w backend -- vitest run tests/purchases.integration.test.ts",
     "test:integration": "npm run test:integration -w backend"
   },
   "devDependencies": {

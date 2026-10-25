@@ -9,7 +9,13 @@ import type {
 } from '@bnect/shared';
 import { config } from './config.js';
 import { embeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { availability, isEligible, regionalDescription, resolveFilters } from './filters.js';
+import {
+  availability,
+  isEligible,
+  regionalDescription,
+  resolveFilters,
+  restrictToTenderRegion,
+} from './filters.js';
 import { PcaCache, projectPca } from './pca.js';
 import { TenderRepository } from './repository.js';
 import { supplierText, tenderText } from './text.js';
@@ -26,7 +32,7 @@ export class RecommendationService {
     tenderId?: string,
     repository = this.repository,
   ) {
-    const filters: ResolvedFilters = request
+    let filters: ResolvedFilters = request
       ? resolveFilters(request.profile, request.filters)
       : {
           regionMode: 'all',
@@ -37,6 +43,7 @@ export class RecommendationService {
     await repository.assertIndexReady();
     const source = tenderId ? ('tender' as const) : ('profile' as const);
     const selectedTender = tenderId ? await repository.get(tenderId) : undefined;
+    if (selectedTender) filters = restrictToTenderRegion(selectedTender, filters);
     const text = selectedTender ? tenderText(selectedTender) : supplierText(request!.profile);
     // Similar-tender queries must use query:, never reuse a saved passage: vector.
     const vector = await this.embeddings.embedQuery(text);
@@ -72,7 +79,10 @@ export class RecommendationService {
         specialization: `${tender.activity}${tender.description ? `. ${tender.description}` : ''}`,
         availability: availability(tender),
         rankingReason:
-          'Кандидаты ограничены видом деятельности из источника, если он указан. Порядок определяется косинусным сходством 384-мерных векторов предмета работ. Явно выделенное название объекта исключено из смыслового текста; одинаковые предметы и повторные объекты пропускаются. Это не проверка допуска к участию.',
+          (selectedTender
+            ? 'Похожие закупки ограничены регионом выбранного тендера и видом деятельности из источника, если он указан. '
+            : 'Кандидаты ограничены включёнными фильтрами профиля. ') +
+          'Порядок определяется косинусным сходством 384-мерных векторов предмета работ. Явно выделенное название объекта исключено из смыслового текста; одинаковые предметы и повторные объекты пропускаются. Это не проверка допуска к участию.',
       },
     }));
     const response: RecommendationResponse = {
@@ -120,7 +130,13 @@ export class RecommendationService {
       return {
         points: rows.map((row) => {
           const [x, y] = projectPca(row.vector, transform);
-          return { tender: row.tender, x, y, eligible: true, recommended: recommended.has(row.id) };
+          return {
+            tender: row.tender,
+            x,
+            y,
+            eligible: response.filters.regionIds.includes(row.tender.regionId ?? ''),
+            recommended: recommended.has(row.id),
+          };
         }),
         query: { x, y, source: 'tender' },
         explainedVariance: transform.explainedVarianceRatio,

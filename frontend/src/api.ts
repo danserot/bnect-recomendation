@@ -6,6 +6,8 @@ import type {
   SupplierProfile,
   TenderListResponse,
   VectorSpaceResponse,
+  PurchaseOptions,
+  PurchaseAnalytics,
 } from '@bnect/shared';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -32,6 +34,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  purchaseOptions: (signal?: AbortSignal) =>
+    request<PurchaseOptions>('/analytics/options', { signal }),
+  purchaseProducts: (q: string, signal?: AbortSignal) =>
+    request<string[]>(`/analytics/products?${new URLSearchParams({ q })}`, { signal }),
+  purchaseAnalytics: (params: URLSearchParams, signal?: AbortSignal) =>
+    request<PurchaseAnalytics>(`/analytics/purchases?${params}`, { signal }),
   catalog: (signal?: AbortSignal) => request<Catalog>('/catalog', { signal }),
   suppliers: (signal?: AbortSignal) => request<SupplierProfile[]>('/suppliers', { signal }),
   saveSupplier: (profile: SupplierProfile) =>

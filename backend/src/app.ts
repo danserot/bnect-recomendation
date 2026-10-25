@@ -10,12 +10,15 @@ import { DemoSupplierSourceAdapter, TenderRepository } from './repository.js';
 import { RecommendationService } from './service.js';
 import { listQuerySchema, recommendationSchema, supplierSchema } from './validation.js';
 import { resolveFilters } from './filters.js';
+import { registerPurchaseRoutes } from './analytics/routes.js';
+import type { PurchaseRepository } from './analytics/repository.js';
 
-export function buildApp() {
-  const app = Fastify({ logger: true, bodyLimit: 32 * 1024 });
+export function buildApp(options: { purchaseRepository?: PurchaseRepository } = {}) {
+  const app = Fastify({ logger: true, disableRequestLogging: true, bodyLimit: 32 * 1024 });
   const repository = new TenderRepository();
   const suppliers = new DemoSupplierSourceAdapter();
   const service = new RecommendationService(repository);
+  registerPurchaseRoutes(app, options.purchaseRepository);
   app.get('/api/import-status', () => fileImportState);
 
   app.post('/api/imports/excel', { bodyLimit: 8 * 1024 * 1024 }, async (request) => {
@@ -80,7 +83,10 @@ export function buildApp() {
       return reply
         .code(400)
         .send({ error: 'INVALID_REQUEST', message: 'Некорректный JSON или параметры запроса.' });
-    request.log.error(error);
+    request.log.error(
+      { code: (error as { code?: string }).code ?? 'INTERNAL_ERROR' },
+      'Ошибка API; содержимое запроса не записывается.',
+    );
     return reply.code(500).send({
       error: 'INTERNAL_ERROR',
       message: 'Внутренняя ошибка сервера. Подробности доступны в журнале backend.',

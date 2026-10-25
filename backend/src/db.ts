@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { config } from './config.js';
 import { AppError, databaseError } from './errors.js';
+import { purchaseMigration } from './analytics/schema.js';
 
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
@@ -81,6 +82,7 @@ export async function migrate(): Promise<void> {
       );
     `);
     // No ANN index: this prototype intentionally uses an exact cosine search.
+    await client.query(purchaseMigration);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');

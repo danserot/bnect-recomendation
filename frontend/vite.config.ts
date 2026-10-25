@@ -7,6 +7,9 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
     host: '127.0.0.1',
+    fs: {
+      deny: ['**/.env*', '**/.git/**', '**/.cache/**', '**/*.{xlsx,xls,xlsm,xlsb,csv,pem,crt}'],
+    },
     proxy: { '/api': 'http://127.0.0.1:3001' },
   },
   preview: {
