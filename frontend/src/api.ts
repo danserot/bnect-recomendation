@@ -8,6 +8,7 @@ import type {
   VectorSpaceResponse,
   PurchaseOptions,
   PurchaseAnalytics,
+  PurchaseReadiness,
 } from '@bnect/shared';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -34,6 +35,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  purchaseReadiness: (signal?: AbortSignal) =>
+    request<PurchaseReadiness>('/analytics/readiness', { signal }),
   purchaseOptions: (signal?: AbortSignal) =>
     request<PurchaseOptions>('/analytics/options', { signal }),
   purchaseProducts: (q: string, signal?: AbortSignal) =>

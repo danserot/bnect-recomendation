@@ -31,6 +31,7 @@ export function registerPurchaseRoutes(
   repository = new PurchaseRepository(),
 ) {
   app.get('/api/analytics/options', () => repository.options());
+  app.get('/api/analytics/readiness', () => repository.readiness());
   app.get('/api/analytics/import-status', async () => {
     try {
       return JSON.parse(

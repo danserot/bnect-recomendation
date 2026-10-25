@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import type { Catalog, Tender } from '@bnect/shared';
 import { api, errorMessage } from './api';
 import CatalogPanel from './CatalogPanel';
 import TenderDrawer from './TenderDrawer';
 import { Loading, Notice } from './ui';
 import TenderMap from './TenderMap';
-import Description from './Description';
 import PurchaseAnalyticsPage from './analytics/PurchaseAnalyticsPage';
+const IntegrationReport = lazy(() => import('./report/IntegrationReport'));
 
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
-  const [tab, setTab] = useState<'catalog' | 'map' | 'description' | 'analytics'>('catalog');
+  const [tab, setTab] = useState<'catalog' | 'map' | 'analytics' | 'report'>('catalog');
   const [mapTenderId, setMapTenderId] = useState<string>();
   const [importStatus, setImportStatus] = useState<{
     stage: string;
@@ -70,16 +70,13 @@ export default function App() {
     <div className="shell">
       <header className="topbar restored-header">
         <div className="topbar-inner">
-          <button className="brand" onClick={closeTender} aria-label="Bnect — список закупок">
-            bnect<span className="brand-dot">.</span>
-          </button>
           <nav className="nav" aria-label="Основные разделы">
             {(
               [
                 ['catalog', 'Закупки'],
-                ['analytics', 'Аналитика закупок'],
-                ['map', 'Векторное пространство'],
-                ['description', 'Как это работает'],
+                ['analytics', 'Аналитика'],
+                ['map', 'Карта векторов'],
+                ['report', 'Внедрение'],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -92,33 +89,39 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <span className="demo-badge">Прототип</span>
         </div>
       </header>
-      <main className={`main simple-main ${tab === 'analytics' ? 'analytics-main' : ''}`}>
-        {tab !== 'analytics' && importStatus && importStatus.stage !== 'waiting' && (
-          <div style={{ marginBottom: 18 }}>
-            <Notice kind={importStatus.stage === 'error' ? 'error' : 'info'}>
-              {importStatus.message}
-              {importStatus.errors?.map((item, i) => (
-                <div key={i}>
-                  Строка {item.row}: {item.field} — {item.message}
-                </div>
-              ))}
-            </Notice>
-          </div>
-        )}
+      <main
+        className={`main simple-main ${tab === 'report' ? 'report-main' : tab === 'analytics' ? 'analytics-main' : ''}`}
+      >
+        {tab !== 'analytics' &&
+          tab !== 'report' &&
+          importStatus &&
+          !['waiting', 'ready'].includes(importStatus.stage) && (
+            <div style={{ marginBottom: 18 }}>
+              <Notice kind={importStatus.stage === 'error' ? 'error' : 'info'}>
+                {importStatus.message}
+                {importStatus.errors?.map((item, i) => (
+                  <div key={i}>
+                    Строка {item.row}: {item.field} — {item.message}
+                  </div>
+                ))}
+              </Notice>
+            </div>
+          )}
         {tab === 'catalog' && (
           <div className="page-heading">
             <div>
               <h1>Закупки</h1>
-              <p className="subtitle">
-                Выберите тендер, чтобы увидеть сведения и пять похожих закупок.
-              </p>
+              <p className="subtitle">Выберите тендер для просмотра похожих закупок.</p>
             </div>
           </div>
         )}
-        {tab === 'analytics' ? (
+        {tab === 'report' ? (
+          <Suspense fallback={<Loading text="Открываем план внедрения…" />}>
+            <IntegrationReport />
+          </Suspense>
+        ) : tab === 'analytics' ? (
           <PurchaseAnalyticsPage />
         ) : error ? (
           <section className="panel boot-error">
@@ -145,13 +148,6 @@ export default function App() {
                 onOpen={openTender}
               />
             )}
-            {tab === 'description' && <Description catalog={catalog} />}
-            <div className="simple-demo-note">
-              <Notice>
-                Тендеры загружены из data/tenders.xlsx. Отсутствующие статусы, сроки и требования не
-                достраиваются.
-              </Notice>
-            </div>
             {selectedTender && (
               <TenderDrawer
                 tender={selectedTender}

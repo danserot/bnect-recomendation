@@ -37,6 +37,12 @@ describe('purchase analytics with real PostgreSQL, isolated schema', () => {
     await admin.end();
   });
   test('empty catalog and dry-run never write data', async () => {
+    expect(await repository.readiness(now)).toMatchObject({
+      totalRows: 0,
+      rowsWithAnalogs: 0,
+      completeChartRows: 0,
+      expectedIntervals: 7,
+    });
     expect((await repository.options()).total).toBe(0);
     expect((await repository.analytics(base, now)).items).toEqual([]);
     const file = await purchaseWorkbook(controlRows, true);
@@ -121,5 +127,46 @@ describe('purchase analytics with real PostgreSQL, isolated schema', () => {
     await repository.import(records);
     const result = await repository.analytics({ ...base, selectedId }, now);
     expect(result.main).toEqual({ price: 200, count: 3, volume: null, method: 'arithmetic' });
+  });
+  test('readiness counts chart availability after exclusion of every line of the selected document', async () => {
+    const months = [
+      '2026-04-28',
+      '2026-05-15',
+      '2026-06-15',
+      '2026-07-15',
+      '2026-08-15',
+      '2026-09-15',
+    ];
+    const rows = [
+      changed('FULL-ANCHOR', { 3: 'FULL-SKU', 5: '2026-10-15' }),
+      ...months.map((date) => changed('FULL-EXCLUSIVE', { 3: 'FULL-SKU', 5: date })),
+      changed('FULL-SECOND', { 3: 'FULL-SKU', 5: '2026-10-20' }),
+    ];
+    const { records } = await parsePurchaseExcel(await purchaseWorkbook(rows), 'synthetic.xlsx');
+    await repository.import(records);
+    const readiness = await repository.readiness(now);
+    expect(readiness).toMatchObject({
+      totalRows: 21,
+      eligibleRows: 21,
+      rowsWithAnalogs: 15,
+      periodRows: 19,
+      completeChartRows: 2,
+      completeChartGroups: 1,
+      expectedIntervals: 7,
+      missingDateRows: 1,
+      missingPriceRows: 0,
+    });
+    const response = await app.inject('/api/analytics/readiness');
+    expect(response.statusCode, response.body).toBe(200);
+    const { generatedAt, period, ...counts } = response.json();
+    expect(
+      Object.values(counts).every(
+        (value) => typeof value === 'number' && Number.isInteger(value) && value >= 0,
+      ),
+    ).toBe(true);
+    expect(generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(Object.keys(period).sort()).toEqual(['from', 'grouping', 'to']);
+    expect(response.body).not.toContain('FULL-ANCHOR');
+    expect(response.body).not.toContain('unitPrice');
   });
 });

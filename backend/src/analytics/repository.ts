@@ -1,5 +1,12 @@
 import type pg from 'pg';
-import type { PriceAggregate, Purchase, PurchaseAnalytics, PurchaseOptions } from '@bnect/shared';
+import type {
+  PriceAggregate,
+  Purchase,
+  PurchaseAnalytics,
+  PurchaseOptions,
+  PurchaseReadiness,
+} from '@bnect/shared';
+import { purchaseReadiness } from './readiness.js';
 import { pool, translateDatabaseError } from '../db.js';
 import {
   compatibilityKey,
@@ -62,6 +69,14 @@ function dateBounds(period: AnalyticsQuery['period'], now: Date) {
 
 export class PurchaseRepository {
   constructor(private readonly connection = pool) {}
+  async readiness(now = new Date()): Promise<PurchaseReadiness> {
+    const period = dateBounds('6', now);
+    return transaction(
+      this.connection,
+      (client) => purchaseReadiness(client, { from: period.from!, to: period.to }, now),
+      true,
+    );
+  }
   async import(records: Purchase[]): Promise<number> {
     async function* source() {
       yield* records;

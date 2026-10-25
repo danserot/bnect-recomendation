@@ -77,3 +77,19 @@ export interface PurchaseAnalytics {
   buckets: PriceBucket[];
   undated: number;
 }
+
+export interface PurchaseReadiness {
+  generatedAt: string;
+  totalRows: number;
+  eligibleRows: number;
+  rowsWithAnalogs: number;
+  comparableGroups: number;
+  singleDocumentGroups: number;
+  missingDateRows: number;
+  missingPriceRows: number;
+  periodRows: number;
+  completeChartRows: number;
+  completeChartGroups: number;
+  expectedIntervals: number;
+  period: { from: string; to: string; grouping: 'month' };
+}
