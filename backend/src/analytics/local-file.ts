@@ -3,9 +3,8 @@ import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { stat } from 'node:fs/promises';
 import type { Purchase } from '@bnect/shared';
-import { parseDate, parseNumber } from './import.js';
+import { canonicalRegion, parseDate, parseNumber } from './values.js';
 import { normalize, purchaseId } from './domain.js';
-import { regions } from '../data/regions.js';
 import { AppError } from '../errors.js';
 
 export interface LocalFileReport {
@@ -144,11 +143,6 @@ export async function* readLocalPurchases(
         report.skipped++;
         continue;
       }
-      const regionText = text('Регион');
-      const region =
-        regions.find((r) =>
-          [r.name, ...r.aliases].some((a) => normalize(a) === normalize(regionText ?? '')),
-        )?.name ?? regionText;
       const data: Omit<Purchase, 'id'> = {
         number: externalNumber!,
         title: product!,
@@ -157,7 +151,7 @@ export async function* readLocalPurchases(
         characteristics: null,
         comparisonGroup: null,
         date,
-        region,
+        region: canonicalRegion(text('Регион')),
         quantity,
         unit: unit ? normalize(unit).replace(/^шт\.$/, 'шт') : null,
         unitPrice,

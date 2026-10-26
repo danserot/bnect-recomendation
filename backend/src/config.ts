@@ -18,8 +18,13 @@ function workspaceRoot() {
 const root = workspaceRoot();
 loadEnv({ path: path.join(root, '.env'), quiet: true });
 
+const runtimeMode = process.env.RUNTIME_MODE ?? 'local';
+if (!['local', 'docker'].includes(runtimeMode))
+  throw new Error('RUNTIME_MODE должен быть local или docker.');
+
 export const config = {
   rootDir: root,
+  runtimeMode,
   host: process.env.HOST ?? '127.0.0.1',
   port: Number(process.env.PORT ?? 3001),
   databaseUrl:
@@ -33,9 +38,15 @@ export const config = {
   demoNow: process.env.DEMO_NOW ?? '2026-10-23T09:00:00.000Z',
 } as const;
 
-if (!['127.0.0.1', 'localhost', '::1'].includes(config.host))
+const localHosts = ['127.0.0.1', 'localhost', '::1'];
+const databaseHosts = ['127.0.0.1', 'localhost', '[::1]'];
+if (runtimeMode === 'docker') {
+  localHosts.push('0.0.0.0');
+  databaseHosts.push('db');
+}
+if (!localHosts.includes(config.host))
   throw new Error('Конфиденциальный локальный режим: HOST должен указывать на loopback.');
-if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(config.databaseUrl).hostname))
+if (!databaseHosts.includes(new URL(config.databaseUrl).hostname))
   throw new Error(
     'Конфиденциальный локальный режим: PostgreSQL должен находиться на этом компьютере.',
   );

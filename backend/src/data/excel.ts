@@ -23,13 +23,17 @@ export async function parseTenderExcel(buffer: Buffer) {
       'EMPTY_EXCEL',
       'Первый лист должен содержать заголовки и строки тендеров.',
     );
-  if (sheet.rowCount > 50001 || sheet.columnCount > 32)
+  // ExcelJS recomputes columnCount by walking every row; never read it per cell.
+  const rowCount = sheet.rowCount;
+  const columnCount = sheet.columnCount;
+  if (rowCount > 50001 || columnCount > 32)
     throw new AppError(400, 'EXCEL_LIMIT', 'Допускается до 50000 строк тендеров и 32 столбцов.');
   const csv: string[] = [];
-  for (let r = 1; r <= sheet.rowCount; r++) {
+  for (let r = 1; r <= rowCount; r++) {
+    const row = sheet.getRow(r);
     const values: string[] = [];
-    for (let c = 1; c <= sheet.columnCount; c++) {
-      const cell = sheet.getRow(r).getCell(c);
+    for (let c = 1; c <= columnCount; c++) {
+      const cell = row.getCell(c);
       if (cell.type === ExcelJS.ValueType.Formula)
         throw new AppError(
           400,

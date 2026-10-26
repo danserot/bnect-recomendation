@@ -4,6 +4,7 @@ import type {
   RecommendationRequest,
   RecommendationResponse,
   ResolvedFilters,
+  SupplierProfile,
   Tender,
   VectorSpaceResponse,
 } from '@bnect/shared';
@@ -20,18 +21,40 @@ import { PcaCache, projectPca } from './pca.js';
 import { TenderRepository } from './repository.js';
 import { supplierText, tenderText } from './text.js';
 
+type MatchingFields = Pick<SupplierProfile, 'industryGroups' | 'activities' | 'procurementTypes'>;
+type VectorCorpus = Awaited<ReturnType<TenderRepository['vectors']>>;
+type QuerySource = RecommendationResponse['query']['source'];
+
+interface ComputedRecommendation {
+  response: RecommendationResponse;
+  vector: number[];
+}
+
+const rankingExplanation =
+  'Порядок определяется косинусным сходством 384-мерных векторов предмета работ. Явно выделенное название объекта исключено из смыслового текста; одинаковые предметы и повторные объекты пропускаются. Это не проверка допуска к участию.';
+
+function matchedFields(tender: Tender, reference: MatchingFields): string[] {
+  return [
+    reference.industryGroups.includes(tender.industryGroup) ? `Сфера: ${tender.industryGroup}` : '',
+    reference.activities.includes(tender.activity) ? `Деятельность: ${tender.activity}` : '',
+    reference.procurementTypes.includes(tender.procurementType)
+      ? `Вид закупки: ${tender.procurementType}`
+      : '',
+  ].filter(Boolean);
+}
+
 export class RecommendationService {
-  private pca = new PcaCache();
+  private readonly pca = new PcaCache();
   constructor(
-    private repository = new TenderRepository(),
-    private embeddings: EmbeddingProvider = embeddingProvider,
+    private readonly repository = new TenderRepository(),
+    private readonly embeddings: EmbeddingProvider = embeddingProvider,
   ) {}
 
   private async compute(
     request: RecommendationRequest | undefined,
     tenderId?: string,
     repository = this.repository,
-  ) {
+  ): Promise<ComputedRecommendation> {
     let filters: ResolvedFilters = request
       ? resolveFilters(request.profile, request.filters)
       : {
@@ -55,34 +78,28 @@ export class RecommendationService {
       Boolean(selectedTender),
       selectedTender?.activity,
     );
-    const matchedFields = (tender: Tender) => {
-      const groups = selectedTender
-        ? [selectedTender.industryGroup]
-        : request!.profile.industryGroups;
-      const activities = selectedTender ? [selectedTender.activity] : request!.profile.activities;
-      const types = selectedTender
-        ? [selectedTender.procurementType]
-        : request!.profile.procurementTypes;
-      return [
-        groups.includes(tender.industryGroup) ? `Сфера: ${tender.industryGroup}` : '',
-        activities.includes(tender.activity) ? `Деятельность: ${tender.activity}` : '',
-        types.includes(tender.procurementType) ? `Вид закупки: ${tender.procurementType}` : '',
-      ].filter(Boolean);
-    };
+    const reference: MatchingFields = selectedTender
+      ? {
+          industryGroups: [selectedTender.industryGroup],
+          activities: [selectedTender.activity],
+          procurementTypes: [selectedTender.procurementType],
+        }
+      : request!.profile;
+    const regionalFilter = regionalDescription(filters);
+    const rankingReason =
+      (selectedTender
+        ? 'Похожие закупки ограничены регионом выбранного тендера и видом деятельности из источника, если он указан. '
+        : 'Кандидаты ограничены включёнными фильтрами профиля. ') + rankingExplanation;
     const results: Recommendation[] = matches.rows.map(({ tender, similarity }) => ({
       tender,
       similarity,
       explanation: {
         querySource: source,
-        matchedFields: matchedFields(tender),
-        regionalFilter: regionalDescription(filters),
+        matchedFields: matchedFields(tender, reference),
+        regionalFilter,
         specialization: `${tender.activity}${tender.description ? `. ${tender.description}` : ''}`,
         availability: availability(tender),
-        rankingReason:
-          (selectedTender
-            ? 'Похожие закупки ограничены регионом выбранного тендера и видом деятельности из источника, если он указан. '
-            : 'Кандидаты ограничены включёнными фильтрами профиля. ') +
-          'Порядок определяется косинусным сходством 384-мерных векторов предмета работ. Явно выделенное название объекта исключено из смыслового текста; одинаковые предметы и повторные объекты пропускаются. Это не проверка допуска к участию.',
+        rankingReason,
       },
     }));
     const response: RecommendationResponse = {
@@ -111,7 +128,7 @@ export class RecommendationService {
     );
   }
 
-  /** The basic tender-to-tender flow does not require a supplier profile or database. */
+  /** The basic tender-to-tender flow does not require a supplier profile. */
   async recommendSimilar(tenderId: string): Promise<RecommendationResponse> {
     return this.repository.readSnapshot(
       async (repository) => (await this.compute(undefined, tenderId, repository)).response,
@@ -123,56 +140,49 @@ export class RecommendationService {
       await repository.assertIndexReady();
       const rows = await repository.vectors();
       const anchor = tenderId ?? rows[0]!.id;
-      const { response, vector } = await this.compute(undefined, anchor, repository);
-      const transform = this.pca.get(rows);
-      const recommended = new Set(response.results.map((item) => item.tender.id));
-      const [x, y] = projectPca(vector, transform);
-      return {
-        points: rows.map((row) => {
-          const [x, y] = projectPca(row.vector, transform);
-          return {
-            tender: row.tender,
-            x,
-            y,
-            eligible: response.filters.regionIds.includes(row.tender.regionId ?? ''),
-            recommended: recommended.has(row.id),
-          };
-        }),
-        query: { x, y, source: 'tender' },
-        explainedVariance: transform.explainedVarianceRatio,
-        recommendations: response,
-        fingerprint: createHash('sha256')
-          .update(rows.map((row) => `${row.id}:${row.contentHash}:${row.embeddedAt}`).join('|'))
-          .digest('hex'),
-      };
+      const computation = await this.compute(undefined, anchor, repository);
+      return this.projectVectorSpace(rows, computation, 'tender', (tender) =>
+        computation.response.filters.regionIds.includes(tender.regionId ?? ''),
+      );
     });
   }
 
   async vectorSpace(request: RecommendationRequest): Promise<VectorSpaceResponse> {
     return this.repository.readSnapshot(async (repository) => {
-      const { response, vector } = await this.compute(request, undefined, repository);
+      const computation = await this.compute(request, undefined, repository);
       const rows = await repository.vectors();
-      const transform = this.pca.get(rows);
-      const recommended = new Set(response.results.map((result) => result.tender.id));
-      const [x, y] = projectPca(vector, transform);
-      return {
-        points: rows.map((row) => {
-          const [px, py] = projectPca(row.vector, transform);
-          return {
-            tender: row.tender,
-            x: px,
-            y: py,
-            eligible: isEligible(row.tender, request.profile, response.filters),
-            recommended: recommended.has(row.id),
-          };
-        }),
-        query: { x, y, source: 'profile' },
-        explainedVariance: transform.explainedVarianceRatio,
-        recommendations: response,
-        fingerprint: createHash('sha256')
-          .update(rows.map((row) => `${row.id}:${row.contentHash}:${row.embeddedAt}`).join('|'))
-          .digest('hex'),
-      };
+      return this.projectVectorSpace(rows, computation, 'profile', (tender) =>
+        isEligible(tender, request.profile, computation.response.filters),
+      );
     });
+  }
+
+  private projectVectorSpace(
+    rows: VectorCorpus,
+    { response, vector }: ComputedRecommendation,
+    source: QuerySource,
+    eligible: (tender: Tender) => boolean,
+  ): VectorSpaceResponse {
+    const transform = this.pca.get(rows);
+    const recommended = new Set(response.results.map((result) => result.tender.id));
+    const [x, y] = projectPca(vector, transform);
+    return {
+      points: rows.map((row) => {
+        const [pointX, pointY] = projectPca(row.vector, transform);
+        return {
+          tender: row.tender,
+          x: pointX,
+          y: pointY,
+          eligible: eligible(row.tender),
+          recommended: recommended.has(row.id),
+        };
+      }),
+      query: { x, y, source },
+      explainedVariance: transform.explainedVarianceRatio,
+      recommendations: response,
+      fingerprint: createHash('sha256')
+        .update(rows.map((row) => `${row.id}:${row.contentHash}:${row.embeddedAt}`).join('|'))
+        .digest('hex'),
+    };
   }
 }

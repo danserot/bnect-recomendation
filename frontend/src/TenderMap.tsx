@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Catalog, Tender, VectorSpaceResponse, VectorPoint } from '@bnect/shared';
+import { api, errorMessage } from './api';
 import { Loading, Notice, Empty, regionName } from './ui';
 import MapCanvas from './MapCanvas';
 import { fitView, zoomAt, type MapFrame, type MapView } from './mapGeometry';
@@ -45,14 +46,8 @@ export default function TenderMap({
     setHover(null);
     setFound(undefined);
     setSearch('');
-    fetch('/api/vector-space' + (tenderId ? '?tenderId=' + encodeURIComponent(tenderId) : ''), {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.message);
-        return result as VectorSpaceResponse;
-      })
+    api
+      .tenderVectorSpace(tenderId, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         const anchor =
@@ -71,7 +66,7 @@ export default function TenderMap({
         );
       })
       .catch((problem) => {
-        if (!controller.signal.aborted) setError(problem.message);
+        if (!controller.signal.aborted) setError(errorMessage(problem));
       });
     return () => controller.abort();
   }, [tenderId, retry]);

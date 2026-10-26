@@ -1,14 +1,13 @@
 import type {
   ApiError,
   Catalog,
-  RecommendationRequest,
   RecommendationResponse,
-  SupplierProfile,
   TenderListResponse,
   VectorSpaceResponse,
   PurchaseOptions,
   PurchaseAnalytics,
   PurchaseReadiness,
+  TenderImportStatus,
 } from '@bnect/shared';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -44,34 +43,16 @@ export const api = {
   purchaseAnalytics: (params: URLSearchParams, signal?: AbortSignal) =>
     request<PurchaseAnalytics>(`/analytics/purchases?${params}`, { signal }),
   catalog: (signal?: AbortSignal) => request<Catalog>('/catalog', { signal }),
-  suppliers: (signal?: AbortSignal) => request<SupplierProfile[]>('/suppliers', { signal }),
-  saveSupplier: (profile: SupplierProfile) =>
-    request<SupplierProfile>(`/suppliers/${encodeURIComponent(profile.id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(profile),
-    }),
+  importStatus: (signal?: AbortSignal) => request<TenderImportStatus>('/import-status', { signal }),
   tenders: (params: URLSearchParams, signal?: AbortSignal) =>
     request<TenderListResponse>(`/tenders?${params}`, { signal }),
-  recommend: (body: RecommendationRequest, signal?: AbortSignal) =>
-    request<RecommendationResponse>('/recommendations', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      signal,
-    }),
   similar: (id: string, signal?: AbortSignal) =>
     request<RecommendationResponse>(`/tenders/${encodeURIComponent(id)}/similar`, { signal }),
-  similarForProfile: (id: string, body: RecommendationRequest, signal?: AbortSignal) =>
-    request<RecommendationResponse>(`/tenders/${encodeURIComponent(id)}/similar`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-      signal,
-    }),
-  vectorSpace: (body: RecommendationRequest, signal?: AbortSignal) =>
-    request<VectorSpaceResponse>('/vector-space', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      signal,
-    }),
+  tenderVectorSpace: (tenderId?: string, signal?: AbortSignal) =>
+    request<VectorSpaceResponse>(
+      `/vector-space${tenderId ? `?${new URLSearchParams({ tenderId })}` : ''}`,
+      { signal },
+    ),
 };
 
 export function errorMessage(error: unknown): string {

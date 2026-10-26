@@ -6,46 +6,29 @@ import TenderDrawer from './TenderDrawer';
 import { Loading, Notice } from './ui';
 import TenderMap from './TenderMap';
 import PurchaseAnalyticsPage from './analytics/PurchaseAnalyticsPage';
+import { useTenderImportStatus } from './hooks/useTenderImportStatus';
+
 const IntegrationReport = lazy(() => import('./report/IntegrationReport'));
+const NAVIGATION = [
+  ['catalog', 'Закупки'],
+  ['analytics', 'Аналитика'],
+  ['map', 'Карта векторов'],
+  ['report', 'Внедрение'],
+] as const;
+type Tab = (typeof NAVIGATION)[number][0];
 
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
-  const [tab, setTab] = useState<'catalog' | 'map' | 'analytics' | 'report'>('catalog');
+  const [tab, setTab] = useState<Tab>('catalog');
   const [mapTenderId, setMapTenderId] = useState<string>();
-  const [importStatus, setImportStatus] = useState<{
-    stage: string;
-    message: string;
-    errors?: { row: number; field: string; message: string }[];
-  } | null>(null);
-  useEffect(() => {
-    let alive = true;
-    let completed = '';
-    const poll = async () => {
-      try {
-        const response = await fetch('/api/import-status');
-        if (!response.ok) return;
-        const state = await response.json();
-        if (!alive) return;
-        setImportStatus(state);
-        if (state.stage === 'ready' && state.updatedAt !== completed) {
-          completed = state.updatedAt;
-          setAttempt((v) => v + 1);
-          setMapTenderId(undefined);
-        }
-      } catch {
-        /* API may be restarting. */
-      }
-    };
-    void poll();
-    const timer = setInterval(() => void poll(), 4000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
+  const handleImportReady = useCallback(() => {
+    setAttempt((value) => value + 1);
+    setMapTenderId(undefined);
   }, []);
+  const importStatus = useTenderImportStatus(handleImportReady);
   const openTender = (tender: Tender) => {
     setSelectedTender(tender);
     setMapTenderId(tender.id);
@@ -71,14 +54,7 @@ export default function App() {
       <header className="topbar restored-header">
         <div className="topbar-inner">
           <nav className="nav" aria-label="Основные разделы">
-            {(
-              [
-                ['catalog', 'Закупки'],
-                ['analytics', 'Аналитика'],
-                ['map', 'Карта векторов'],
-                ['report', 'Внедрение'],
-              ] as const
-            ).map(([id, label]) => (
+            {NAVIGATION.map(([id, label]) => (
               <button
                 className={`nav-button ${tab === id ? 'active' : ''}`}
                 key={id}
@@ -136,9 +112,7 @@ export default function App() {
         ) : (
           <>
             {tab === 'catalog' && (
-              <>
-                <CatalogPanel key={attempt} catalog={catalog} onOpen={openTender} />
-              </>
+              <CatalogPanel key={attempt} catalog={catalog} onOpen={openTender} />
             )}
             {tab === 'map' && (
               <TenderMap

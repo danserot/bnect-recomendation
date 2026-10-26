@@ -1,20 +1,20 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { TenderImportStatus } from '@bnect/shared';
 import { config } from './config.js';
 import { parseTenderExcel } from './data/excel.js';
 import { TenderRepository } from './repository.js';
 import { embeddingProvider } from './embedding.js';
 
-export const fileImportState: {
-  stage: string;
-  message: string;
-  rows?: number;
-  imported?: number;
-  errors?: unknown[];
-  updatedAt?: string;
-} = { stage: 'waiting', message: 'Ожидаем data/tenders.xlsx' };
-const update = (stage: string, message: string, extra: Partial<typeof fileImportState> = {}) =>
-  Object.assign(fileImportState, { stage, message, updatedAt: new Date().toISOString() }, extra);
+export const fileImportState: TenderImportStatus = {
+  stage: 'waiting',
+  message: 'Ожидаем data/tenders.xlsx',
+};
+const update = (
+  stage: TenderImportStatus['stage'],
+  message: string,
+  extra: Partial<TenderImportStatus> = {},
+) => Object.assign(fileImportState, { stage, message, updatedAt: new Date().toISOString() }, extra);
 
 /** Local input file; idempotent upserts and persisted hashes avoid repeat inference. */
 export function watchTenderFile(

@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type {
   RecommendationRequest,
   RecommendationResponse,
+  Tender,
   VectorSpaceResponse,
 } from '@bnect/shared';
 import { buildApp } from '../src/app.js';
@@ -226,6 +227,64 @@ describe('real E5 + pgvector vertical slice', () => {
       'SELECT id, embedded_at::text AS embedded_at FROM tenders ORDER BY id',
     );
     expect(after.rows).toEqual(before.rows);
+  });
+
+  test('an unchanged batch is checked in one lookup instead of one query per tender', async () => {
+    const repository = new TenderRepository();
+    const { items } = await repository.list({ page: 1, pageSize: 100 });
+    expect(items.length).toBeGreaterThan(1);
+    const client = await pool.connect();
+    const querySpy = vi.spyOn(client, 'query');
+    const connectSpy = vi.spyOn(pool, 'connect').mockResolvedValueOnce(client);
+    try {
+      const result = await repository.upsertTenders(items);
+      expect(result).toEqual({ inserted: 0, updated: 0, unchanged: items.length, skipped: 0 });
+      const lookups = querySpy.mock.calls.filter(
+        ([sql]) => typeof sql === 'string' && /^\s*SELECT\b/i.test(sql),
+      );
+      expect(lookups).toHaveLength(1);
+    } finally {
+      querySpy.mockRestore();
+      connectSpy.mockRestore();
+    }
+  });
+
+  test('batch upserts retain stored IDs and observe earlier writes for repeated numbers', async () => {
+    const repository = new TenderRepository();
+    const { items } = await repository.list({ page: 1, pageSize: 1 });
+    const number = 'TEST-BATCH-IMPORT';
+    const original: Tender = {
+      ...items[0]!,
+      id: 'test-batch-original',
+      externalNumber: number,
+      source: 'import',
+    };
+    const latest: Tender = {
+      ...original,
+      id: 'test-batch-replacement',
+      title: 'Изменённый предмет',
+    };
+    try {
+      expect(
+        await repository.upsertTenders([original, { ...original, id: 'ignored' }, latest]),
+      ).toEqual({ inserted: 1, updated: 1, unchanged: 1, skipped: 0 });
+      expect(await repository.get(original.id)).toEqual({ ...latest, id: original.id });
+      expect(await repository.upsertTenders([original], { preserveImports: true })).toEqual({
+        inserted: 0,
+        updated: 0,
+        unchanged: 0,
+        skipped: 1,
+      });
+      expect(await repository.upsertTenders([original], { dryRun: true })).toEqual({
+        inserted: 0,
+        updated: 1,
+        unchanged: 0,
+        skipped: 0,
+      });
+      expect(await repository.get(original.id)).toEqual({ ...latest, id: original.id });
+    } finally {
+      await pool.query('DELETE FROM tenders WHERE external_number=$1', [number]);
+    }
   });
 
   test('empty constrained regions fail validation and literal wildcard search is not expanded', async () => {

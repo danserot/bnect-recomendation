@@ -1,14 +1,16 @@
 import type { PoolClient } from 'pg';
 import type { PurchaseReadiness } from '@bnect/shared';
 
+type ReadinessCounts = Omit<PurchaseReadiness, 'generatedAt' | 'expectedIntervals' | 'period'>;
+
 /** Only aggregate counts leave this query; no document identifiers, names or prices. */
 export async function purchaseReadiness(
   client: PoolClient,
   period: { from: string; to: string },
   now: Date,
 ): Promise<PurchaseReadiness> {
-  const first = new Date(`${period.from}T00:00:00Z`),
-    last = new Date(`${period.to}T00:00:00Z`);
+  const first = new Date(`${period.from}T00:00:00Z`);
+  const last = new Date(`${period.to}T00:00:00Z`);
   const expectedIntervals =
     (last.getUTCFullYear() - first.getUTCFullYear()) * 12 +
     last.getUTCMonth() -
@@ -16,7 +18,7 @@ export async function purchaseReadiness(
     1;
   const {
     rows: [counts],
-  } = await client.query(
+  } = await client.query<ReadinessCounts>(
     `
     WITH eligible AS MATERIALIZED (
       SELECT compatibility_key,region,purchased_on,data->>'number' AS document

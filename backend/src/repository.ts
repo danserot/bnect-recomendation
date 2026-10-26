@@ -5,63 +5,25 @@ import type {
   Tender,
   TenderListResponse,
 } from '@bnect/shared';
-import { isDeepStrictEqual } from 'node:util';
 import type pg from 'pg';
 import { config } from './config.js';
 import { dbQuery, pool, translateDatabaseError } from './db.js';
 import { AppError } from './errors.js';
-import { regions } from './data/index.js';
-import { contentHash, tenderText, projectKey } from './text.js';
+import { regions } from './data/regions.js';
+import { projectKey } from './text.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ListQuery } from './validation.js';
-
-type Row = Record<string, any>;
-const asIso = (value: Date | string) => new Date(value).toISOString();
-export function mapTender(row: Row): Tender {
-  return {
-    id: row.id,
-    externalNumber: row.external_number,
-    title: row.title,
-    regionId: row.region_id,
-    createdAt: asIso(row.created_at),
-    industryGroup: row.industry_group,
-    activity: row.activity,
-    procurementMethod: row.procurement_method,
-    procurementType: row.procurement_type,
-    ...(row.description ? { description: row.description } : {}),
-    ...(row.status ? { status: row.status } : {}),
-    ...(row.application_deadline ? { applicationDeadline: asIso(row.application_deadline) } : {}),
-    source: row.source,
-  };
-}
-
-export const vectorLiteral = (vector: number[]): string => {
-  if (vector.length !== config.dimensions || !vector.every(Number.isFinite))
-    throw new AppError(400, 'INVALID_VECTOR', `Нужен конечный ${config.dimensions}-мерный вектор.`);
-  return `[${vector.join(',')}]`;
-};
-
-export interface SupplierSourceAdapter {
-  list(): Promise<SupplierProfile[]>;
-  save(profile: SupplierProfile): Promise<SupplierProfile>;
-}
-
-/** Local demo profiles only. A real supplier database integration is intentionally an adapter boundary. */
-export class DemoSupplierSourceAdapter implements SupplierSourceAdapter {
-  async list(): Promise<SupplierProfile[]> {
-    const { rows } = await dbQuery('SELECT profile FROM supplier_profiles ORDER BY id');
-    return rows.map((row) => row.profile as SupplierProfile);
-  }
-  async save(profile: SupplierProfile): Promise<SupplierProfile> {
-    const result = await dbQuery(
-      'UPDATE supplier_profiles SET profile=$2::jsonb, updated_at=now() WHERE id=$1 RETURNING profile',
-      [profile.id, JSON.stringify(profile)],
-    );
-    if (!result.rowCount)
-      throw new AppError(404, 'SUPPLIER_NOT_FOUND', 'Демонстрационный профиль не найден.');
-    return result.rows[0]!.profile;
-  }
-}
+import {
+  asIso,
+  mapTender,
+  vectorLiteral,
+  type TenderRow,
+  type RankedTenderRow,
+  type VectorRow,
+  type EmbeddingIndexState,
+} from './tenders/records.js';
+import { upsertTenders, type TenderImportOptions } from './tenders/import.js';
+import { indexTenders } from './tenders/index.js';
 
 export interface SqlConditions {
   clauses: string[];
@@ -98,15 +60,6 @@ export function buildRecommendationConditions(
   if (excludedId) add('id <> ?', excludedId);
   return { clauses, values };
 }
-
-export const EXACT_SEARCH_SQL = `
--- Eligibility is evaluated in WHERE before the exact cosine sort and LIMIT.
--- No approximate index and no regional bonus are used.
-SELECT *, embedding <=> $1::vector AS distance
-FROM tenders
-WHERE /* structured conditions */ TRUE
-ORDER BY distance ASC, id ASC
-LIMIT 5;`;
 
 export class TenderRepository {
   constructor(private query: typeof dbQuery = dbQuery) {}
@@ -163,7 +116,7 @@ export class TenderRepository {
       `SELECT count(*) FROM tenders WHERE ${where}`,
       values,
     );
-    const rows = await this.query(
+    const rows = await this.query<TenderRow>(
       `SELECT * FROM tenders WHERE ${where} ORDER BY created_at DESC,id ASC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, query.pageSize, (query.page - 1) * query.pageSize],
     );
@@ -176,14 +129,18 @@ export class TenderRepository {
   }
 
   async get(id: string): Promise<Tender> {
-    const result = await this.query('SELECT * FROM tenders WHERE id=$1', [id]);
+    const result = await this.query<TenderRow>('SELECT * FROM tenders WHERE id=$1', [id]);
     if (!result.rowCount) throw new AppError(404, 'TENDER_NOT_FOUND', 'Тендер не найден.');
     return mapTender(result.rows[0]!);
   }
 
   async catalog(): Promise<Catalog> {
-    const { rows } = await this
-      .query(`SELECT ARRAY(SELECT DISTINCT industry_group FROM tenders ORDER BY industry_group) AS industries,
+    const { rows } = await this.query<{
+      industries: string[];
+      activities: string[];
+      types: string[];
+      methods: string[];
+    }>(`SELECT ARRAY(SELECT DISTINCT industry_group FROM tenders ORDER BY industry_group) AS industries,
       ARRAY(SELECT DISTINCT activity FROM tenders ORDER BY activity) AS activities,
       ARRAY(SELECT DISTINCT procurement_type FROM tenders ORDER BY procurement_type) AS types,
       ARRAY(SELECT DISTINCT procurement_method FROM tenders ORDER BY procurement_method) AS methods`);
@@ -203,9 +160,15 @@ export class TenderRepository {
   }
 
   async indexStatus() {
-    const { rows } = await this.query(`SELECT count(*)::int total, count(embedding)::int indexed,
+    const { rows } = await this.query<{
+      total: number;
+      indexed: number;
+      pending: number;
+    }>(`SELECT count(*)::int total, count(embedding)::int indexed,
       count(*) FILTER (WHERE embedding IS NULL)::int pending FROM tenders`);
-    const metadata = await this.query('SELECT * FROM embedding_index_state WHERE singleton=true');
+    const metadata = await this.query<EmbeddingIndexState>(
+      'SELECT * FROM embedding_index_state WHERE singleton=true',
+    );
     const state = metadata.rows[0];
     const compatible =
       !state ||
@@ -213,7 +176,7 @@ export class TenderRepository {
         state.embedding_version === config.embeddingVersion &&
         state.dimensions === config.dimensions);
     return {
-      ...(rows[0] as { total: number; indexed: number; pending: number }),
+      ...rows[0]!,
       compatible,
       modelId: state?.model_id,
       embeddingVersion: state?.embedding_version,
@@ -272,12 +235,12 @@ export class TenderRepository {
       );
     }
     const where = clauses.join(' AND ');
-    const counts = await this.query(
+    const counts = await this.query<{ total: number; candidates: number }>(
       `SELECT count(*)::int total, count(*) FILTER (WHERE ${where})::int candidates FROM tenders`,
       values,
     );
     // PostgreSQL pgvector computes cosine distance in full 384-dimensional space.
-    const result = await this.query(
+    const result = await this.query<RankedTenderRow>(
       `SELECT id,external_number,title,region_id,created_at,industry_group,activity,procurement_method,procurement_type,description,status,application_deadline,source,content_hash, embedding <=> $${values.length + 1}::vector AS distance
       FROM tenders WHERE ${where} AND embedding IS NOT NULL
       ORDER BY distance ASC, id ASC ${diversify ? '' : 'LIMIT 5'}`,
@@ -303,101 +266,26 @@ export class TenderRepository {
         tender: mapTender(row),
         similarity: 1 - Number(row.distance),
       })),
-      candidateCount: counts.rows[0]!.candidates as number,
-      totalCount: counts.rows[0]!.total as number,
+      candidateCount: counts.rows[0]!.candidates,
+      totalCount: counts.rows[0]!.total,
     };
   }
 
   async vectors() {
-    const { rows } = await this.query(
+    const { rows } = await this.query<VectorRow>(
       'SELECT *,embedding::text AS vector_text FROM tenders WHERE embedding IS NOT NULL ORDER BY id',
     );
     return rows.map((row) => ({
-      id: row.id as string,
+      id: row.id,
       tender: mapTender(row),
       vector: JSON.parse(row.vector_text) as number[],
-      contentHash: row.content_hash as string,
+      contentHash: row.content_hash,
       embeddedAt: asIso(row.embedded_at),
     }));
   }
 
-  async upsertTenders(
-    tenders: Tender[],
-    options: { preserveImports?: boolean; dryRun?: boolean; removeDemo?: boolean } = {},
-  ) {
-    const client = await pool.connect();
-    const report = { inserted: 0, updated: 0, unchanged: 0, skipped: 0 };
-    try {
-      await client.query('BEGIN');
-      for (const tender of tenders) {
-        const old = await client.query('SELECT * FROM tenders WHERE external_number=$1', [
-          tender.externalNumber,
-        ]);
-        if (options.preserveImports && old.rows[0]?.source === 'import') {
-          report.skipped++;
-          continue;
-        }
-        if (
-          old.rows[0] &&
-          isDeepStrictEqual(
-            mapTender(old.rows[0]),
-            JSON.parse(
-              JSON.stringify({
-                ...tender,
-                id: old.rows[0].id,
-                createdAt: asIso(tender.createdAt),
-                ...(tender.applicationDeadline
-                  ? { applicationDeadline: asIso(tender.applicationDeadline) }
-                  : {}),
-              }),
-            ),
-          )
-        ) {
-          report.unchanged++;
-          continue;
-        }
-        if (old.rowCount) report.updated++;
-        else report.inserted++;
-        if (options.dryRun) continue;
-        await client.query(
-          `INSERT INTO tenders(id,external_number,title,region_id,created_at,industry_group,activity,procurement_method,procurement_type,description,status,application_deadline,source)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-          ON CONFLICT(external_number) DO UPDATE SET title=excluded.title,region_id=excluded.region_id,created_at=excluded.created_at,
-          industry_group=excluded.industry_group,activity=excluded.activity,procurement_method=excluded.procurement_method,procurement_type=excluded.procurement_type,
-          description=excluded.description,status=excluded.status,application_deadline=excluded.application_deadline,source=excluded.source,
-          embedding=CASE WHEN tenders.content_hash=$14 THEN tenders.embedding ELSE NULL END,
-          model_id=CASE WHEN tenders.content_hash=$14 THEN tenders.model_id ELSE NULL END,
-          embedding_version=CASE WHEN tenders.content_hash=$14 THEN tenders.embedding_version ELSE NULL END,
-          embedded_at=CASE WHEN tenders.content_hash=$14 THEN tenders.embedded_at ELSE NULL END,
-          content_hash=CASE WHEN tenders.content_hash=$14 THEN tenders.content_hash ELSE NULL END,updated_at=now()`,
-          [
-            tender.id,
-            tender.externalNumber,
-            tender.title,
-            tender.regionId,
-            tender.createdAt,
-            tender.industryGroup,
-            tender.activity,
-            tender.procurementMethod,
-            tender.procurementType,
-            tender.description ?? null,
-            tender.status ?? null,
-            tender.applicationDeadline ?? null,
-            tender.source,
-            contentHash(tenderText(tender)),
-          ],
-        );
-      }
-      if (options.removeDemo && !options.dryRun)
-        await client.query("DELETE FROM tenders WHERE source='demo'");
-      await client.query(options.dryRun ? 'ROLLBACK' : 'COMMIT');
-      return report;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+  async upsertTenders(tenders: Tender[], options: TenderImportOptions = {}) {
+    return upsertTenders(tenders, options);
   }
 
   async seedSuppliers(profiles: SupplierProfile[]): Promise<void> {
@@ -413,67 +301,6 @@ export class TenderRepository {
     reindex: boolean,
     log: (message: string) => void = console.log,
   ) {
-    const client = await pool.connect();
-    try {
-      const lock = await client.query('SELECT pg_try_advisory_lock(6246127) locked');
-      if (!lock.rows[0]?.locked)
-        throw new AppError(409, 'INDEX_BUSY', 'Индексация уже запущена другим процессом.');
-      const old = await client.query('SELECT * FROM embedding_index_state WHERE singleton=true');
-      const state = old.rows[0];
-      if (
-        !reindex &&
-        state &&
-        (state.model_id !== config.modelId ||
-          state.embedding_version !== config.embeddingVersion ||
-          state.dimensions !== config.dimensions)
-      )
-        throw new AppError(
-          409,
-          'REINDEX_REQUIRED',
-          'Модель или формат текста изменены: используйте npm run db:reindex.',
-        );
-      await client.query('BEGIN');
-      const { rows } = await client.query('SELECT * FROM tenders ORDER BY id FOR UPDATE');
-      const changed = rows.filter(
-        (row) =>
-          reindex || !row.embedding || row.content_hash !== contentHash(tenderText(mapTender(row))),
-      );
-      log(
-        `Тендеров: ${rows.length}. Требуется embeddings: ${changed.length}. Неизменившихся: ${rows.length - changed.length}.`,
-      );
-      // One transaction prevents a failed reindex from exposing mixed vector spaces.
-      for (let offset = 0; offset < changed.length; offset += config.batchSize) {
-        const batch = changed.slice(offset, offset + config.batchSize);
-        const texts = batch.map((row) => tenderText(mapTender(row)));
-        const vectors = await provider.embedDocuments(texts);
-        for (let i = 0; i < batch.length; i++) {
-          await client.query(
-            `UPDATE tenders SET embedding=$2::vector,model_id=$3,embedding_version=$4,content_hash=$5,embedded_at=now()
-            WHERE id=$1`,
-            [
-              batch[i]!.id,
-              vectorLiteral(vectors[i]!),
-              config.modelId,
-              config.embeddingVersion,
-              contentHash(texts[i]!),
-            ],
-          );
-        }
-        log(`Индексация: ${Math.min(offset + batch.length, changed.length)}/${changed.length}`);
-      }
-      await client.query(
-        `INSERT INTO embedding_index_state(singleton,model_id,embedding_version,dimensions) VALUES(true,$1,$2,$3)
-        ON CONFLICT(singleton) DO UPDATE SET model_id=excluded.model_id,embedding_version=excluded.embedding_version,dimensions=excluded.dimensions,updated_at=now()`,
-        [config.modelId, config.embeddingVersion, config.dimensions],
-      );
-      await client.query('COMMIT');
-      return { indexed: changed.length, unchanged: rows.length - changed.length };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      await client.query('SELECT pg_advisory_unlock(6246127)').catch(() => undefined);
-      client.release();
-    }
+    return indexTenders(provider, reindex, log);
   }
 }

@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import ExcelJS from 'exceljs';
 import { parseTenderExcel } from '../src/data/excel.js';
 import { CSV_HEADERS } from '../src/data/csv.js';
@@ -20,6 +20,23 @@ const row = [
   'Товары',
 ];
 describe('Excel import adapter', () => {
+  test('reads worksheet dimensions once instead of rescanning all rows for every cell', async () => {
+    const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet('Тендеры');
+    sheet.addRow([...CSV_HEADERS]);
+    for (let index = 0; index < 200; index++) sheet.addRow([`BATCH-${index}`, ...row.slice(1)]);
+    const buffer = Buffer.from(await book.xlsx.writeBuffer());
+    const dimensions = vi.spyOn(Object.getPrototypeOf(sheet), 'columnCount', 'get');
+    try {
+      const result = await parseTenderExcel(buffer);
+      expect(result.tenders).toHaveLength(200);
+      expect(result.errors).toEqual([]);
+      expect(dimensions).toHaveBeenCalledTimes(1);
+    } finally {
+      dimensions.mockRestore();
+    }
+  });
+
   test('reads native Excel dates and canonical regions without inventing status', async () => {
     const result = await parseTenderExcel(await file(row));
     expect(result.errors).toEqual([]);

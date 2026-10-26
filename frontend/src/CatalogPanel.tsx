@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Catalog, Tender, TenderListResponse } from '@bnect/shared';
-import { api, errorMessage } from './api';
+import type { Catalog, Tender } from '@bnect/shared';
+import { useTenderCatalog } from './hooks/useTenderCatalog';
 import { Empty, Icon, Loading, TenderCard } from './ui';
 
 export default function CatalogPanel({
@@ -10,44 +9,20 @@ export default function CatalogPanel({
   catalog: Catalog;
   onOpen: (tender: Tender) => void;
 }) {
-  const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
-  const [region, setRegion] = useState('');
-  const [page, setPage] = useState(1);
-  const [retry, setRetry] = useState(0);
-  const [state, setState] = useState<{
-    key: string;
-    loading?: boolean;
-    data?: TenderListResponse;
-    error?: string;
-  }>({ key: '' });
-  const key = JSON.stringify({ query, region, page, retry });
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQuery(search.trim());
-      setPage(1);
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [search]);
-  useEffect(() => {
-    const controller = new AbortController();
-    setState({ key, loading: true });
-    const params = new URLSearchParams({ page: String(page), pageSize: '8' });
-    if (query) params.set('q', query);
-    if (region) params.set('regionId', region);
-    api
-      .tenders(params, controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setState({ key, data });
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) setState({ key, error: errorMessage(error) });
-      });
-    return () => controller.abort();
-  }, [key]);
-  const current = state.key === key ? state : undefined;
-  const data = current?.data;
-  const pendingSearch = search.trim() !== query;
+  const {
+    search,
+    setSearch,
+    region,
+    page,
+    setPage,
+    data,
+    error,
+    loading,
+    pendingSearch,
+    changeRegion,
+    submitSearch,
+    retry,
+  } = useTenderCatalog();
   return (
     <section className="panel catalog-panel" aria-labelledby="catalog-title">
       <div className="section-heading">
@@ -59,8 +34,7 @@ export default function CatalogPanel({
         className="search-row"
         onSubmit={(event) => {
           event.preventDefault();
-          setQuery(search.trim());
-          setPage(1);
+          submitSearch();
         }}
       >
         <label className="search-box">
@@ -85,10 +59,7 @@ export default function CatalogPanel({
             className="control"
             aria-label="Регион каталога"
             value={region}
-            onChange={(event) => {
-              setRegion(event.target.value);
-              setPage(1);
-            }}
+            onChange={(event) => changeRegion(event.target.value)}
           >
             <option value="">Все регионы</option>
             {catalog.regions.map((item) => (
@@ -99,19 +70,19 @@ export default function CatalogPanel({
           </select>
         </label>
       </div>
-      {!current || current.loading || pendingSearch ? (
+      {loading ? (
         <Loading text="Обновляем список закупок…" />
-      ) : current.error ? (
+      ) : error ? (
         <Empty
           title="Каталог недоступен"
           icon="info"
           action={
-            <button className="btn sm" onClick={() => setRetry((value) => value + 1)}>
+            <button className="btn sm" onClick={retry}>
               Повторить
             </button>
           }
         >
-          {current.error}
+          {error}
         </Empty>
       ) : data && !data.items.length ? (
         <Empty title="Закупки не найдены">
