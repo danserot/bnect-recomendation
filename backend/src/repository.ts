@@ -10,7 +10,6 @@ import { config } from './config.js';
 import { dbQuery, pool, translateDatabaseError } from './db.js';
 import { AppError } from './errors.js';
 import { regions } from './data/regions.js';
-import { projectKey } from './text.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ListQuery } from './validation.js';
 import {
@@ -43,6 +42,7 @@ export function buildRecommendationConditions(
   if (filters.regionMode !== 'all') add('region_id = ANY(?::text[])', filters.regionIds);
   if (filters.industryGroups?.length)
     add('industry_group = ANY(?::text[])', filters.industryGroups);
+  if (filters.activities?.length) add('activity = ANY(?::text[])', filters.activities);
   if (filters.procurementTypes?.length)
     add('procurement_type = ANY(?::text[])', filters.procurementTypes);
   if (filters.procurementMethods?.length)
@@ -109,6 +109,7 @@ export class TenderRepository {
       );
     if (query.regionId) add('region_id = ?', query.regionId);
     if (query.industryGroup) add('industry_group = ?', query.industryGroup);
+    if (query.activity) add('activity = ?', query.activity);
     if (query.procurementType) add('procurement_type = ?', query.procurementType);
     if (query.procurementMethod) add('procurement_method = ?', query.procurementMethod);
     const where = clauses.join(' AND ');
@@ -222,47 +223,23 @@ export class TenderRepository {
     profile: SupplierProfile | undefined,
     filters: ResolvedFilters,
     excludedId?: string,
-    diversify = false,
-    workActivity?: string,
   ) {
     const { clauses, values } = buildRecommendationConditions(profile, filters, excludedId);
-    if (workActivity && !/^[\s—–-]*$/.test(workActivity)) {
-      values.push(
-        workActivity.normalize('NFKC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('ru'),
-      );
-      clauses.push(
-        `lower(regexp_replace(btrim(replace(activity, chr(160), ' ')), '[[:space:]]+', ' ', 'g')) = $${values.length}`,
-      );
-    }
     const where = clauses.join(' AND ');
     const counts = await this.query<{ total: number; candidates: number }>(
       `SELECT count(*)::int total, count(*) FILTER (WHERE ${where})::int candidates FROM tenders`,
       values,
     );
-    // PostgreSQL pgvector computes cosine distance in full 384-dimensional space.
+    // Apply structured filters before ranking the full eligible set by title similarity.
+    const rankingValues = [...values, vectorLiteral(vector)];
     const result = await this.query<RankedTenderRow>(
       `SELECT id,external_number,title,region_id,created_at,industry_group,activity,procurement_method,procurement_type,description,status,application_deadline,source,content_hash, embedding <=> $${values.length + 1}::vector AS distance
       FROM tenders WHERE ${where} AND embedding IS NOT NULL
-      ORDER BY distance ASC, id ASC ${diversify ? '' : 'LIMIT 5'}`,
-      [...values, vectorLiteral(vector)],
+      ORDER BY distance ASC, id ASC LIMIT 5`,
+      rankingValues,
     );
-    const chosen: typeof result.rows = [];
-    const seenSubjects = new Set<string>(),
-      seenProjects = new Set<string>();
-    for (const row of result.rows) {
-      const project = projectKey(row.title);
-      if (
-        diversify &&
-        (seenSubjects.has(row.content_hash) || (project && seenProjects.has(project)))
-      )
-        continue;
-      chosen.push(row);
-      seenSubjects.add(row.content_hash);
-      if (project) seenProjects.add(project);
-      if (chosen.length === 5) break;
-    }
     return {
-      rows: chosen.map((row) => ({
+      rows: result.rows.map((row) => ({
         tender: mapTender(row),
         similarity: 1 - Number(row.distance),
       })),

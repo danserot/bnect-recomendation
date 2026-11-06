@@ -1216,3 +1216,19 @@ textarea.control {
     flex-wrap: wrap;
   }
 }
+.similar-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.similar-filters h3 {
+  margin: 0 0 4px;
+}
+.similar-filters p {
+  margin: 0 0 12px;
+}
+@media (max-width: 640px) {
+  .similar-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}

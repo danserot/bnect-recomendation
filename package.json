@@ -18,6 +18,7 @@
     "db:seed": "npm run db:seed -w backend",
     "db:index": "npm run db:index -w backend",
     "db:reindex": "npm run db:reindex -w backend",
+    "benchmark:model": "npm run build -w backend && node backend/dist/backend/src/benchmark.js",
     "db:import": "tsx backend/src/cli.ts import",
     "analytics:import": "tsx backend/src/analytics/import-cli.ts",
     "test:analytics": "npm exec -w backend -- vitest run tests/purchases.integration.test.ts",

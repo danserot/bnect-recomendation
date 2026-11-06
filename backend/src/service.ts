@@ -4,6 +4,7 @@ import type {
   RecommendationRequest,
   RecommendationResponse,
   ResolvedFilters,
+  SimilarTenderFilters,
   SupplierProfile,
   Tender,
   VectorSpaceResponse,
@@ -31,7 +32,7 @@ interface ComputedRecommendation {
 }
 
 const rankingExplanation =
-  'Порядок определяется косинусным сходством 384-мерных векторов предмета работ. Явно выделенное название объекта исключено из смыслового текста; одинаковые предметы и повторные объекты пропускаются. Это не проверка допуска к участию.';
+  'Порядок определяется косинусным сходством названий закупок. Вид закупки, сфера, деятельность и способ закупки учитываются только выбранными фильтрами. Это не проверка допуска к участию.';
 
 function matchedFields(tender: Tender, reference: MatchingFields): string[] {
   return [
@@ -54,6 +55,7 @@ export class RecommendationService {
     request: RecommendationRequest | undefined,
     tenderId?: string,
     repository = this.repository,
+    similarFilters?: SimilarTenderFilters,
   ): Promise<ComputedRecommendation> {
     let filters: ResolvedFilters = request
       ? resolveFilters(request.profile, request.filters)
@@ -62,6 +64,7 @@ export class RecommendationService {
           selectedRegionIds: [],
           regionIds: [],
           regionNames: [],
+          ...similarFilters,
         };
     await repository.assertIndexReady();
     const source = tenderId ? ('tender' as const) : ('profile' as const);
@@ -70,14 +73,7 @@ export class RecommendationService {
     const text = selectedTender ? tenderText(selectedTender) : supplierText(request!.profile);
     // Similar-tender queries must use query:, never reuse a saved passage: vector.
     const vector = await this.embeddings.embedQuery(text);
-    const matches = await repository.search(
-      vector,
-      request?.profile,
-      filters,
-      tenderId,
-      Boolean(selectedTender),
-      selectedTender?.activity,
-    );
+    const matches = await repository.search(vector, request?.profile, filters, tenderId);
     const reference: MatchingFields = selectedTender
       ? {
           industryGroups: [selectedTender.industryGroup],
@@ -86,10 +82,9 @@ export class RecommendationService {
         }
       : request!.profile;
     const regionalFilter = regionalDescription(filters);
-    const rankingReason =
-      (selectedTender
-        ? 'Похожие закупки ограничены регионом выбранного тендера и видом деятельности из источника, если он указан. '
-        : 'Кандидаты ограничены включёнными фильтрами профиля. ') + rankingExplanation;
+    const rankingReason = selectedTender
+      ? 'Подбор ограничен регионом выбранного тендера. Выбранные фильтры применяются до поиска. Пять результатов отсортированы по сходству названий; при равенстве — по ID. Это не проверка допуска к участию.'
+      : 'Кандидаты ограничены включёнными фильтрами профиля. ' + rankingExplanation;
     const results: Recommendation[] = matches.rows.map(({ tender, similarity }) => ({
       tender,
       similarity,
@@ -129,9 +124,12 @@ export class RecommendationService {
   }
 
   /** The basic tender-to-tender flow does not require a supplier profile. */
-  async recommendSimilar(tenderId: string): Promise<RecommendationResponse> {
+  async recommendSimilar(
+    tenderId: string,
+    filters?: SimilarTenderFilters,
+  ): Promise<RecommendationResponse> {
     return this.repository.readSnapshot(
-      async (repository) => (await this.compute(undefined, tenderId, repository)).response,
+      async (repository) => (await this.compute(undefined, tenderId, repository, filters)).response,
     );
   }
 

@@ -13,6 +13,10 @@ export default function CatalogPanel({
     search,
     setSearch,
     region,
+    industryGroup,
+    activity,
+    procurementType,
+    procurementMethod,
     page,
     setPage,
     data,
@@ -20,6 +24,10 @@ export default function CatalogPanel({
     loading,
     pendingSearch,
     changeRegion,
+    changeIndustryGroup,
+    changeActivity,
+    changeProcurementType,
+    changeProcurementMethod,
     submitSearch,
     retry,
   } = useTenderCatalog();
@@ -52,9 +60,9 @@ export default function CatalogPanel({
           Найти
         </button>
       </form>
-      <div style={{ marginBottom: 10 }}>
-        <label className="field" style={{ margin: 0, maxWidth: 260 }}>
-          <span className="sr-only">Регион каталога</span>
+      <div className="similar-filter-grid" style={{ marginBottom: 12 }}>
+        <label className="field">
+          <span>Регион</span>
           <select
             className="control"
             aria-label="Регион каталога"
@@ -69,6 +77,41 @@ export default function CatalogPanel({
             ))}
           </select>
         </label>
+        {(
+          [
+            ['Сфера (группа)', industryGroup, changeIndustryGroup, catalog.industryGroups],
+            ['Сфера деятельности', activity, changeActivity, catalog.activities],
+            [
+              'Вид закупки или услуги',
+              procurementType,
+              changeProcurementType,
+              catalog.procurementTypes,
+            ],
+            [
+              'Способ закупки',
+              procurementMethod,
+              changeProcurementMethod,
+              catalog.procurementMethods,
+            ],
+          ] as const
+        ).map(([label, value, onChange, options]) => (
+          <label className="field" key={label}>
+            <span>{label}</span>
+            <select
+              className="control"
+              aria-label={label}
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+            >
+              <option value="">Любой</option>
+              {options.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
       </div>
       {loading ? (
         <Loading text="Обновляем список закупок…" />
@@ -86,7 +129,7 @@ export default function CatalogPanel({
         </Empty>
       ) : data && !data.items.length ? (
         <Empty title="Закупки не найдены">
-          Попробуйте другой номер, часть названия или регион каталога.
+          Попробуйте другое название или измените фильтры каталога.
         </Empty>
       ) : (
         data && (

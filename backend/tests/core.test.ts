@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { demoSuppliers, generateDemoTenders } from '../src/data/index.js';
 import { contentHash, supplierText, tenderText, workSubject, projectKey } from '../src/text.js';
 import { availability, isEligible, resolveFilters } from '../src/filters.js';
-import { buildRecommendationConditions } from '../src/repository.js';
+import { buildRecommendationConditions, TenderRepository } from '../src/repository.js';
+import type { dbQuery } from '../src/db.js';
 import { fitPca, PcaCache, projectPca } from '../src/pca.js';
-import { recommendationSchema } from '../src/validation.js';
+import { recommendationSchema, similarFiltersSchema } from '../src/validation.js';
 
 const profile = demoSuppliers[0]!;
 const tender = generateDemoTenders()[0]!;
@@ -22,7 +23,7 @@ describe('stable semantic input', () => {
     };
     expect(tenderText(first)).toBe(tenderText(second));
     expect(tenderText(first)).not.toContain('Arman Qala');
-    expect(tenderText(first)).toContain('Внутренние электромонтажные сети');
+    expect(tenderText(first)).toBe('электромонтажные работы');
     expect(workSubject('Разработка проекта электроснабжения')).toBe(
       'Разработка проекта электроснабжения',
     );
@@ -41,10 +42,13 @@ describe('stable semantic input', () => {
       procurementMethod: 'Иной способ',
     };
     expect(contentHash(tenderText(changed))).toBe(contentHash(tenderText(tender)));
-    expect(contentHash(tenderText({ ...tender, activity: 'Иная деятельность' }))).not.toBe(
+    expect(contentHash(tenderText({ ...tender, title: 'Иное название' }))).not.toBe(
       contentHash(tenderText(tender)),
     );
-    expect(tenderText(tender)).toContain(`Наименование: ${tender.title}`);
+    expect(contentHash(tenderText({ ...tender, activity: 'Иная деятельность' }))).toBe(
+      contentHash(tenderText(tender)),
+    );
+    expect(tenderText(tender)).toBe(workSubject(tender.title));
   });
   it('uses specialization, excludes company name and region, stabilizes arrays', () => {
     const changed = {
@@ -164,6 +168,7 @@ describe('explicit filters and input validation', () => {
     const filters = resolveFilters(profile, {
       regionMode: 'supplier',
       selectedRegionIds: [],
+      activities: ['Ремонт помещений'],
       procurementMethods: ['Открытый конкурс'],
       applySupplierIndustryGroups: true,
     });
@@ -171,11 +176,45 @@ describe('explicit filters and input validation', () => {
     expect(query.clauses).toEqual([
       'TRUE',
       'region_id = ANY($1::text[])',
-      'procurement_method = ANY($2::text[])',
-      'industry_group = ANY($3::text[])',
-      'id <> $4',
+      'activity = ANY($2::text[])',
+      'procurement_method = ANY($3::text[])',
+      'industry_group = ANY($4::text[])',
+      'id <> $5',
     ]);
-    expect(query.values[3]).toBe('source');
+    expect(query.values[4]).toBe('source');
+  });
+  it('validates filters for the profile-free similar-tender API', () => {
+    expect(
+      similarFiltersSchema.parse({
+        activities: ['Ремонт помещений'],
+        procurementTypes: ['Работы'],
+      }),
+    ).toEqual({ activities: ['Ремонт помещений'], procurementTypes: ['Работы'] });
+    expect(() => similarFiltersSchema.parse({ hiddenBoost: 10 })).toThrow();
+    const filters = resolveFilters(profile, {
+      regionMode: 'all',
+      selectedRegionIds: [],
+      activities: [tender.activity],
+    });
+    expect(isEligible(tender, profile, filters)).toBe(true);
+    expect(isEligible({ ...tender, activity: 'Иное' }, profile, filters)).toBe(false);
+  });
+  it('applies filters before cosine ranking without activity or date priority', async () => {
+    const query = vi.fn(async (sql: string) => ({
+      rows: sql.includes('count(*)') ? [{ total: 10, candidates: 3 }] : [],
+      rowCount: 0,
+    }));
+    const repository = new TenderRepository(query as unknown as typeof dbQuery);
+    const filters = resolveFilters(profile, {
+      regionMode: 'all',
+      selectedRegionIds: [],
+      activities: ['Ремонт помещений'],
+    });
+    await repository.search(Array(384).fill(0), undefined, filters);
+    const sql = query.mock.calls[1]![0];
+    expect(sql).toContain('WHERE TRUE AND activity = ANY($1::text[]) AND embedding IS NOT NULL');
+    expect(sql).toContain('ORDER BY distance ASC, id ASC LIMIT 5');
+    expect(sql).not.toContain('created_at -');
   });
 });
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Catalog, RecommendationResponse, Tender } from '@bnect/shared';
+import type { Catalog, RecommendationResponse, Tender, SimilarTenderFilters } from '@bnect/shared';
 import { api, errorMessage } from './api';
+import TenderComparison from './comparison/TenderComparison';
 import {
   availability,
   Empty,
@@ -26,12 +27,35 @@ export default function TenderDrawer({
   const dialog = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [state, setState] = useState<{
-    id: string;
+    key: string;
     loading?: boolean;
     data?: RecommendationResponse;
     error?: string;
-  }>({ id: '' });
+  }>({ key: '' });
   const [retry, setRetry] = useState(0);
+  const [selection, setSelection] = useState({
+    id: '',
+    industryGroup: '',
+    activity: '',
+    procurementType: '',
+    procurementMethod: '',
+  });
+  const selected =
+    selection.id === tender.id
+      ? selection
+      : {
+          id: tender.id,
+          industryGroup: '',
+          activity: '',
+          procurementType: '',
+          procurementMethod: '',
+        };
+  const filterKey = JSON.stringify(selected);
+  const requestKey = `${tender.id}:${filterKey}:${retry}`;
+  const setFilter = (
+    name: 'industryGroup' | 'activity' | 'procurementType' | 'procurementMethod',
+    value: string,
+  ) => setSelection({ ...selected, [name]: value });
 
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
@@ -45,7 +69,7 @@ export default function TenderDrawer({
       if (event.key !== 'Tab') return;
       const elements = [
         ...(dialog.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]',
         ) ?? []),
       ].filter((item) => item.offsetParent !== null);
       if (!elements.length) {
@@ -70,23 +94,29 @@ export default function TenderDrawer({
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ id: tender.id, loading: true });
+    setState({ key: requestKey, loading: true });
+    const filters: SimilarTenderFilters = {
+      ...(selected.industryGroup ? { industryGroups: [selected.industryGroup] } : {}),
+      ...(selected.activity ? { activities: [selected.activity] } : {}),
+      ...(selected.procurementType ? { procurementTypes: [selected.procurementType] } : {}),
+      ...(selected.procurementMethod ? { procurementMethods: [selected.procurementMethod] } : {}),
+    };
     api
-      .similar(tender.id, controller.signal)
+      .similarFiltered(tender.id, filters, controller.signal)
       .then((data) => {
-        if (!controller.signal.aborted) setState({ id: tender.id, data });
+        if (!controller.signal.aborted) setState({ key: requestKey, data });
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setState({ id: tender.id, error: errorMessage(error) });
+        if (!controller.signal.aborted) setState({ key: requestKey, error: errorMessage(error) });
       });
     return () => controller.abort();
-  }, [tender.id, retry]);
+  }, [requestKey]);
 
   useEffect(() => {
     dialog.current?.scrollTo({ top: 0 });
     closeButton.current?.focus();
   }, [tender.id]);
-  const current = state.id === tender.id ? state : undefined;
+  const current = state.key === requestKey ? state : undefined;
 
   return (
     <div
@@ -96,14 +126,14 @@ export default function TenderDrawer({
       }}
     >
       <div
-        className="drawer"
+        className="drawer comparison-drawer"
         role="dialog"
         aria-modal="true"
         aria-labelledby="tender-detail-title"
         ref={dialog}
       >
         <div className="drawer-header">
-          <h2 id="tender-detail-title">Сведения о закупке</h2>
+          <h2 id="tender-detail-title">Сравнение тендеров</h2>
           <button
             ref={closeButton}
             className="icon-button"
@@ -115,6 +145,7 @@ export default function TenderDrawer({
         </div>
         <div className="drawer-body">
           <section className="panel drawer-detail">
+            <span className="comparison-eyebrow">Исходный тендер</span>
             <div className="tender-number">
               № {tender.externalNumber}
               <span className="chip orange">
@@ -122,81 +153,116 @@ export default function TenderDrawer({
               </span>
             </div>
             <h3>{tender.title}</h3>
-            <dl className="details-grid">
-              <div>
-                <dt>Регион</dt>
-                <dd>{regionName(tender, catalog)}</dd>
-              </div>
-              <div>
-                <dt>Дата создания</dt>
-                <dd>{formatDate(tender.createdAt)}</dd>
-              </div>
-              <div>
-                <dt>Сфера (группа)</dt>
-                <dd>{tender.industryGroup}</dd>
-              </div>
-              <div>
-                <dt>Сфера деятельности</dt>
-                <dd>{tender.activity}</dd>
-              </div>
-              <div>
-                <dt>Способ закупки</dt>
-                <dd>{tender.procurementMethod}</dd>
-              </div>
-              <div>
-                <dt>Вид закупки</dt>
-                <dd>{tender.procurementType}</dd>
-              </div>
-              <div>
-                <dt>Статус</dt>
-                <dd>
-                  {tender.status === 'open'
-                    ? 'Открыта'
-                    : tender.status === 'closed'
-                      ? 'Закрыта'
+            <div className="comparison-source-summary">
+              <span>
+                <Icon name="pin" size={13} />
+                {regionName(tender, catalog)}
+              </span>
+              <span>
+                <Icon name="calendar" size={13} />
+                {formatDate(tender.createdAt)}
+              </span>
+              <span>{tender.activity}</span>
+            </div>
+            <details className="comparison-source-details">
+              <summary>Все сведения об исходном тендере</summary>
+              <dl className="details-grid">
+                <div>
+                  <dt>Регион</dt>
+                  <dd>{regionName(tender, catalog)}</dd>
+                </div>
+                <div>
+                  <dt>Дата создания</dt>
+                  <dd>{formatDate(tender.createdAt)}</dd>
+                </div>
+                <div>
+                  <dt>Сфера (группа)</dt>
+                  <dd>{tender.industryGroup}</dd>
+                </div>
+                <div>
+                  <dt>Сфера деятельности</dt>
+                  <dd>{tender.activity}</dd>
+                </div>
+                <div>
+                  <dt>Способ закупки</dt>
+                  <dd>{tender.procurementMethod}</dd>
+                </div>
+                <div>
+                  <dt>Вид закупки</dt>
+                  <dd>{tender.procurementType}</dd>
+                </div>
+                <div>
+                  <dt>Статус</dt>
+                  <dd>
+                    {tender.status === 'open'
+                      ? 'Открыта'
+                      : tender.status === 'closed'
+                        ? 'Закрыта'
+                        : 'Не указан'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Срок подачи заявок</dt>
+                  <dd>
+                    {tender.applicationDeadline
+                      ? `${formatTime(tender.applicationDeadline)} (UTC+5)`
                       : 'Не указан'}
-                </dd>
-              </div>
-              <div>
-                <dt>Срок подачи заявок</dt>
-                <dd>
-                  {tender.applicationDeadline
-                    ? `${formatTime(tender.applicationDeadline)} (UTC+5)`
-                    : 'Не указан'}
-                </dd>
-              </div>
-            </dl>
-            {tender.description && (
-              <>
-                <h3 style={{ fontSize: 12, marginBottom: 8 }}>Описание</h3>
-                <p className="details-description">{tender.description}</p>
-              </>
-            )}
-            <Notice kind={tender.source === 'demo' ? 'warning' : 'info'}>
-              {availability(tender, catalog.demoNow)}.{' '}
-              {tender.source === 'demo'
-                ? `Статус и срок демонстрационные, на ${formatTime(catalog.demoNow)} (UTC+5).`
-                : 'Дата создания не является сроком подачи заявок.'}
-            </Notice>
+                  </dd>
+                </div>
+              </dl>
+              {tender.description && (
+                <>
+                  <h3 style={{ fontSize: 12, marginBottom: 8 }}>Описание</h3>
+                  <p className="details-description">{tender.description}</p>
+                </>
+              )}
+              <Notice kind={tender.source === 'demo' ? 'warning' : 'info'}>
+                {availability(tender, catalog.demoNow)}.{' '}
+                {tender.source === 'demo'
+                  ? `Статус и срок демонстрационные, на ${formatTime(catalog.demoNow)} (UTC+5).`
+                  : 'Дата создания не является сроком подачи заявок.'}
+              </Notice>
+            </details>
           </section>
-          <div className="section-heading">
-            <h2>
-              Похожие закупки
-              {current?.data && <span className="count">{current.data.results.length}</span>}
-            </h2>
-          </div>
-          <p className="small muted">
-            {tender.regionId ? (
-              <>
-                <strong>Только регион: {regionName(tender, catalog)}.</strong>{' '}
-              </>
-            ) : (
-              'Регион тендера не определён — подбор недоступен. '
-            )}
-            Подбор по виду работ из источника и смыслу предмета. Повторные предметы и объекты
-            пропускаются; если подходящих закупок меньше пяти, показываем фактическое число без
-            добавления других регионов.
-          </p>
+          <section className="panel similar-filters" aria-label="Фильтры похожих закупок">
+            <h3>Фильтры похожих закупок</h3>
+            <p>Сходство считается по названию. Регион совпадает с исходным тендером.</p>
+            <div className="similar-filter-grid">
+              {(
+                [
+                  ['industryGroup', 'Сфера (группа)', catalog.industryGroups],
+                  ['activity', 'Сфера деятельности', catalog.activities],
+                  ['procurementType', 'Вид закупки или услуги', catalog.procurementTypes],
+                  ['procurementMethod', 'Способ закупки', catalog.procurementMethods],
+                ] as const
+              ).map(([name, label, options]) => (
+                <label className="field" key={name}>
+                  <span>{label}</span>
+                  <select
+                    className="control"
+                    value={selected[name]}
+                    onChange={(event) => setFilter(name, event.target.value)}
+                  >
+                    <option value="">Любой</option>
+                    {options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <details className="comparison-source-details">
+              <summary>Как работает локальная модель</summary>
+              <p>
+                {catalog.model.id} работает на CPU в backend из локальной папки
+                <code> .cache/models</code>. Страница передаёт ID тендера и фильтры в API; модель
+                преобразует название в вектор, а PostgreSQL сравнивает его с сохранёнными векторами
+                названий. Оценка показывает сходство, а не вероятность победы.
+              </p>
+            </details>
+          </section>
           {!current || current.loading ? (
             <Loading text="Ищем похожие закупки…" />
           ) : current.error ? (
@@ -214,51 +280,17 @@ export default function TenderDrawer({
           ) : (
             current.data &&
             (current.data.results.length ? (
-              <div className="recommendations">
-                {current.data.results.map((item) => (
-                  <article className="tender-card" key={item.tender.id}>
-                    <div className="tender-card-top">
-                      <div>
-                        <div className="tender-number">№ {item.tender.externalNumber}</div>
-                        <button className="tender-title" onClick={() => onOpen(item.tender)}>
-                          {item.tender.title}
-                        </button>
-                      </div>
-                      <span
-                        className="simple-score"
-                        title="Косинусное сходство, не вероятность победы"
-                      >
-                        {item.similarity.toFixed(2)}
-                        <span>сходство</span>
-                      </span>
-                    </div>
-                    <div className="tender-meta">
-                      <span className="meta-item">
-                        <Icon name="pin" size={12} />
-                        {regionName(item.tender, catalog)}
-                      </span>
-                      <span>{item.tender.industryGroup}</span>
-                      <span>{item.tender.procurementType}</span>
-                    </div>
-                    <p className="small" style={{ margin: '10px 0 0', color: '#4f657b' }}>
-                      <strong>Работы / поставки:</strong> {item.tender.activity}
-                    </p>
-                    <div className="card-footer">
-                      <span className="chip gray">
-                        {availability(item.tender, catalog.demoNow)}
-                      </span>
-                      <button className="explanation-toggle" onClick={() => onOpen(item.tender)}>
-                        Подробнее
-                        <Icon name="chevron" size={12} />
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <TenderComparison
+                key={tender.id}
+                source={tender}
+                data={current.data}
+                catalog={catalog}
+                onOpen={onOpen}
+              />
             ) : (
               <Empty title="Похожие закупки не найдены">
                 {tender.regionId
-                  ? `В регионе «${regionName(tender, catalog)}» нет подходящих закупок. Другие регионы не добавляются.`
+                  ? `В регионе «${regionName(tender, catalog)}» нет закупок с выбранными фильтрами. Попробуйте снять часть фильтров.`
                   : 'Укажите корректный регион в Excel и дождитесь обновления каталога.'}
               </Empty>
             ))

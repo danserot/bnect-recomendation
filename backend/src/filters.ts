@@ -53,6 +53,7 @@ export function isEligible(
     return false;
   if (filters.industryGroups?.length && !filters.industryGroups.includes(tender.industryGroup))
     return false;
+  if (filters.activities?.length && !filters.activities.includes(tender.activity)) return false;
   if (
     filters.procurementTypes?.length &&
     !filters.procurementTypes.includes(tender.procurementType)

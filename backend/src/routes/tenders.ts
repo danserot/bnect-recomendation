@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { TenderRepository } from '../repository.js';
 import type { RecommendationService } from '../service.js';
-import { listQuerySchema, recommendationSchema } from '../validation.js';
+import { listQuerySchema, recommendationSchema, similarFiltersSchema } from '../validation.js';
 
 type TenderRoute = { Params: { id: string } };
 const vectorSpaceQuerySchema = z.object({ tenderId: z.string().min(1).optional() });
@@ -17,6 +17,9 @@ export function registerTenderRoutes(
   app.get<TenderRoute>('/api/tenders/:id', (request) => repository.get(request.params.id));
   app.get<TenderRoute>('/api/tenders/:id/similar', (request) =>
     service.recommendSimilar(request.params.id),
+  );
+  app.post<TenderRoute>('/api/tenders/:id/similar/filter', (request) =>
+    service.recommendSimilar(request.params.id, similarFiltersSchema.parse(request.body)),
   );
   app.post<TenderRoute>('/api/tenders/:id/similar', (request) =>
     service.recommend(recommendationSchema.parse(request.body), request.params.id),

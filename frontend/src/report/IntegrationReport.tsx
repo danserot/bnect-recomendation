@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
 import ReadinessAssessment from './ReadinessAssessment';
+import TenderIntegrationReport from './TenderIntegrationReport';
 import './integration-report.css';
 
 const sections = [
+  ['similar-tenders', 'Похожие тендеры'],
   ['placement', 'Куда встроить'],
   ['readiness', 'Данные'],
   ['method', 'Расчёт'],
@@ -31,7 +33,9 @@ export default function IntegrationReport() {
       <div className="page-heading">
         <div>
           <h1>План внедрения</h1>
-          <p className="subtitle">Средняя цена в позиции закупки. График — при полной истории.</p>
+          <p className="subtitle">
+            Пять похожих тендеров на странице закупки и аналитика цен в позициях.
+          </p>
         </div>
       </div>
       <nav className="integration-contents" aria-label="Разделы плана">
@@ -42,6 +46,9 @@ export default function IntegrationReport() {
         ))}
       </nav>
       <div className="integration-body">
+        <Section id="similar-tenders" title="Подбор пяти похожих тендеров">
+          <TenderIntegrationReport />
+        </Section>
         <Section id="placement" title="Куда встроить">
           <div className="integration-table-scroll">
             <table>

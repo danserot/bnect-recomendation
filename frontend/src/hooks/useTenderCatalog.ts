@@ -15,10 +15,23 @@ export function useTenderCatalog() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('');
+  const [industryGroup, setIndustryGroup] = useState('');
+  const [activity, setActivity] = useState('');
+  const [procurementType, setProcurementType] = useState('');
+  const [procurementMethod, setProcurementMethod] = useState('');
   const [page, setPage] = useState(1);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<CatalogRequestState | null>(null);
-  const requestKey = JSON.stringify({ query, region, page, attempt });
+  const requestKey = JSON.stringify({
+    query,
+    region,
+    industryGroup,
+    activity,
+    procurementType,
+    procurementMethod,
+    page,
+    attempt,
+  });
   const current = state?.key === requestKey ? state : null;
   const pendingSearch = search.trim() !== query;
 
@@ -35,6 +48,10 @@ export function useTenderCatalog() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
     if (query) params.set('q', query);
     if (region) params.set('regionId', region);
+    if (industryGroup) params.set('industryGroup', industryGroup);
+    if (activity) params.set('activity', activity);
+    if (procurementType) params.set('procurementType', procurementType);
+    if (procurementMethod) params.set('procurementMethod', procurementMethod);
 
     setState({ key: requestKey });
     api.tenders(params, controller.signal).then(
@@ -54,6 +71,10 @@ export function useTenderCatalog() {
     search,
     setSearch,
     region,
+    industryGroup,
+    activity,
+    procurementType,
+    procurementMethod,
     page,
     setPage,
     data: current?.data,
@@ -62,6 +83,22 @@ export function useTenderCatalog() {
     pendingSearch,
     changeRegion: (value: string) => {
       setRegion(value);
+      setPage(1);
+    },
+    changeIndustryGroup: (value: string) => {
+      setIndustryGroup(value);
+      setPage(1);
+    },
+    changeActivity: (value: string) => {
+      setActivity(value);
+      setPage(1);
+    },
+    changeProcurementType: (value: string) => {
+      setProcurementType(value);
+      setPage(1);
+    },
+    changeProcurementMethod: (value: string) => {
+      setProcurementMethod(value);
       setPage(1);
     },
     submitSearch: () => {

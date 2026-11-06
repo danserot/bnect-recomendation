@@ -2,6 +2,7 @@ import type {
   ApiError,
   Catalog,
   RecommendationResponse,
+  SimilarTenderFilters,
   TenderListResponse,
   VectorSpaceResponse,
   PurchaseOptions,
@@ -48,6 +49,12 @@ export const api = {
     request<TenderListResponse>(`/tenders?${params}`, { signal }),
   similar: (id: string, signal?: AbortSignal) =>
     request<RecommendationResponse>(`/tenders/${encodeURIComponent(id)}/similar`, { signal }),
+  similarFiltered: (id: string, filters: SimilarTenderFilters, signal?: AbortSignal) =>
+    request<RecommendationResponse>(`/tenders/${encodeURIComponent(id)}/similar/filter`, {
+      method: 'POST',
+      body: JSON.stringify(filters),
+      signal,
+    }),
   tenderVectorSpace: (tenderId?: string, signal?: AbortSignal) =>
     request<VectorSpaceResponse>(
       `/vector-space${tenderId ? `?${new URLSearchParams({ tenderId })}` : ''}`,

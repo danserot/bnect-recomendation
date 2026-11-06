@@ -39,6 +39,11 @@
   line-height: 1.5;
   margin-bottom: 15px;
 }
+.integration-section h3 {
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 22px 0 10px;
+}
 .integration-section p,
 .integration-section li {
   font-size: 13px;

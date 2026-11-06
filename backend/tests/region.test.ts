@@ -37,6 +37,7 @@ describe('strict region constraint before similarity ranking', () => {
       const { service, selected, search } = setup(regionId);
       const response = await service.recommendSimilar(selected.id);
       const filters = search.mock.calls[0]![2];
+      expect(search).toHaveBeenCalledWith([1, 0], undefined, filters, selected.id);
       expect(filters).toMatchObject({ regionMode: 'selected', regionIds: [regionId] });
       const sql = buildRecommendationConditions(undefined, filters, selected.id);
       expect(sql.clauses).toContain('region_id = ANY($1::text[])');
@@ -55,13 +56,34 @@ describe('strict region constraint before similarity ranking', () => {
     expect(isEligible(selected, profile, response.filters)).toBe(false);
     expect(response.results).toEqual([]);
   });
+  it('passes selected activity and service filters to SQL without changing the region', async () => {
+    const { service, selected, search } = setup('astana');
+    const response = await service.recommendSimilar(selected.id, {
+      activities: ['Ремонт помещений'],
+      procurementTypes: ['Услуги'],
+    });
+    const filters = search.mock.calls[0]![2];
+    expect(filters).toMatchObject({
+      regionIds: ['astana'],
+      activities: ['Ремонт помещений'],
+      procurementTypes: ['Услуги'],
+    });
+    expect(buildRecommendationConditions(undefined, filters, selected.id).clauses).toEqual([
+      'TRUE',
+      'region_id = ANY($1::text[])',
+      'activity = ANY($2::text[])',
+      'procurement_type = ANY($3::text[])',
+      'id <> $4',
+    ]);
+    expect(response.query.text).toBeDefined();
+  });
 
   it.each([
     ['all', [], ['astana']],
     ['selected', ['astana', 'atyrau'], ['astana']],
     ['selected', ['atyrau'], []],
   ] as const)('also restricts legacy POST with %s / %j', async (regionMode, ids, expected) => {
-    const { service, selected } = setup('astana');
+    const { service, selected, search } = setup('astana');
     const request: RecommendationRequest = {
       profile,
       filters: { regionMode, selectedRegionIds: [...ids] },
@@ -69,5 +91,6 @@ describe('strict region constraint before similarity ranking', () => {
     const response = await service.recommend(request, selected.id);
     expect(response.filters.regionMode).toBe('selected');
     expect(response.filters.regionIds).toEqual(expected);
+    expect(search).toHaveBeenCalledWith([1, 0], profile, response.filters, selected.id);
   });
 });

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SupplierProfile, Tender } from '@bnect/shared';
 
-export const SEMANTIC_TEXT_VERSION = 'work-scope-v2';
+export const SEMANTIC_TEXT_VERSION = 'title-only-v1';
 const normalize = (text: string) => text.normalize('NFKC').replace(/\s+/g, ' ').trim();
 /** Object names are presentation metadata, not the subject of the purchase. */
 export function projectKey(title: string): string | undefined {
@@ -39,13 +39,7 @@ export function workSubject(title: string): string {
 }
 
 export function tenderText(tender: Tender): string {
-  return [
-    `Работы или поставки: ${normalize(tender.activity)}`,
-    `Сфера: ${normalize(tender.industryGroup)}`,
-    `Наименование: ${workSubject(tender.title) || normalize(tender.activity)}`,
-    `Вид закупки: ${normalize(tender.procurementType)}`,
-    ...(tender.description?.trim() ? [`Описание: ${normalize(tender.description)}`] : []),
-  ].join('\n');
+  return workSubject(tender.title) || normalize(tender.title);
 }
 
 export function supplierText(profile: SupplierProfile): string {

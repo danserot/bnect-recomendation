@@ -31,6 +31,7 @@ export const recommendationSchema = z
         regionMode: z.enum(['supplier', 'selected', 'all']).default('supplier'),
         selectedRegionIds: values.default([]),
         industryGroups: values.optional(),
+        activities: values.optional(),
         procurementTypes: values.optional(),
         procurementMethods: values.optional(),
         applySupplierIndustryGroups: z.boolean().optional(),
@@ -46,6 +47,7 @@ export const listQuerySchema = z
     q: z.string().trim().max(200).optional(),
     regionId: text.optional(),
     industryGroup: text.optional(),
+    activity: text.optional(),
     procurementType: text.optional(),
     procurementMethod: text.optional(),
     page: z.coerce.number().int().min(1).max(100000).default(1),
@@ -54,3 +56,12 @@ export const listQuerySchema = z
   .strict();
 
 export type ListQuery = z.infer<typeof listQuerySchema>;
+
+export const similarFiltersSchema = z
+  .object({
+    industryGroups: values.optional(),
+    activities: values.optional(),
+    procurementTypes: values.optional(),
+    procurementMethods: values.optional(),
+  })
+  .strict();

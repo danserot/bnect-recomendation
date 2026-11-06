@@ -31,11 +31,18 @@ export interface RecommendationFilters {
   regionMode: 'supplier' | 'selected' | 'all';
   selectedRegionIds: string[];
   industryGroups?: string[];
+  activities?: string[];
   procurementTypes?: string[];
   procurementMethods?: string[];
   applySupplierIndustryGroups?: boolean;
   applySupplierProcurementTypes?: boolean;
   onlyOpen?: boolean;
+}
+export interface SimilarTenderFilters {
+  industryGroups?: string[];
+  activities?: string[];
+  procurementTypes?: string[];
+  procurementMethods?: string[];
 }
 export interface RecommendationRequest {
   profile: SupplierProfile;
