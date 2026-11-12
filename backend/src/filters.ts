@@ -7,20 +7,21 @@ import type {
 import { regions } from './data/index.js';
 import { config } from './config.js';
 import { AppError } from './errors.js';
+import { matchesDeadline } from './deadlines.js';
 
 export function resolveFilters(
-  profile: SupplierProfile,
+  profile: SupplierProfile | undefined,
   filters: RecommendationFilters,
 ): ResolvedFilters {
   const regionIds =
     filters.regionMode === 'all'
       ? []
       : filters.regionMode === 'supplier'
-        ? profile.serviceRegionIds
+        ? (profile?.serviceRegionIds ?? [])
         : filters.selectedRegionIds;
   const known = new Set(regions.map((region) => region.id));
   if (
-    profile.serviceRegionIds.some((id) => !known.has(id)) ||
+    profile?.serviceRegionIds.some((id) => !known.has(id)) ||
     filters.selectedRegionIds.some((id) => !known.has(id))
   )
     throw new AppError(
@@ -43,9 +44,10 @@ export function resolveFilters(
 
 export function isEligible(
   tender: Tender,
-  profile: SupplierProfile,
+  profile: SupplierProfile | undefined,
   filters: ResolvedFilters,
 ): boolean {
+  if (!matchesDeadline(tender, filters)) return false;
   if (
     filters.regionMode !== 'all' &&
     (!tender.regionId || !filters.regionIds.includes(tender.regionId))
@@ -64,11 +66,14 @@ export function isEligible(
     !filters.procurementMethods.includes(tender.procurementMethod)
   )
     return false;
-  if (filters.applySupplierIndustryGroups && !profile.industryGroups.includes(tender.industryGroup))
+  if (
+    filters.applySupplierIndustryGroups &&
+    !profile?.industryGroups.includes(tender.industryGroup)
+  )
     return false;
   if (
     filters.applySupplierProcurementTypes &&
-    !profile.procurementTypes.includes(tender.procurementType)
+    !profile?.procurementTypes.includes(tender.procurementType)
   )
     return false;
   if (
@@ -81,22 +86,6 @@ export function isEligible(
   )
     return false;
   return true;
-}
-
-/** Geography is a hard constraint for similar tenders, including legacy POST requests. */
-export function restrictToTenderRegion(tender: Tender, filters: ResolvedFilters): ResolvedFilters {
-  const region = regions.find(({ id }) => id === tender.regionId);
-  const regionIds =
-    region && (filters.regionMode === 'all' || filters.regionIds.includes(region.id))
-      ? [region.id]
-      : [];
-  return {
-    ...filters,
-    regionMode: 'selected',
-    selectedRegionIds: regionIds,
-    regionIds,
-    regionNames: regionIds.map(() => region!.name),
-  };
 }
 
 export function availability(tender: Tender): string {

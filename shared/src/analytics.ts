@@ -70,6 +70,8 @@ export interface PurchaseAnalytics {
   pageSize: number;
   selected: Purchase | null;
   main: PriceAggregate;
+  /** True only when the selected purchase is the sole price in the main average. */
+  mainIncludesSelected: boolean;
   comparison: PriceAggregate | null;
   difference: number | null;
   reason: string | null;

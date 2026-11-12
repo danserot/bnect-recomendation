@@ -23,6 +23,7 @@ import {
 } from './tenders/records.js';
 import { upsertTenders, type TenderImportOptions } from './tenders/import.js';
 import { indexTenders } from './tenders/index.js';
+import { deadlineBounds } from './deadlines.js';
 
 export interface SqlConditions {
   clauses: string[];
@@ -47,6 +48,9 @@ export function buildRecommendationConditions(
     add('procurement_type = ANY(?::text[])', filters.procurementTypes);
   if (filters.procurementMethods?.length)
     add('procurement_method = ANY(?::text[])', filters.procurementMethods);
+  const bounds = deadlineBounds(filters);
+  if (bounds.from) add('application_deadline >= ?::timestamptz', bounds.from);
+  if (bounds.to) add('application_deadline < ?::timestamptz', bounds.to);
   if ((filters.applySupplierIndustryGroups || filters.applySupplierProcurementTypes) && !profile)
     throw new AppError(400, 'PROFILE_REQUIRED', 'Для ограничений поставщика нужен профиль.');
   if (filters.applySupplierIndustryGroups)
@@ -112,6 +116,9 @@ export class TenderRepository {
     if (query.activity) add('activity = ?', query.activity);
     if (query.procurementType) add('procurement_type = ?', query.procurementType);
     if (query.procurementMethod) add('procurement_method = ?', query.procurementMethod);
+    const bounds = deadlineBounds(query);
+    if (bounds.from) add('application_deadline >= ?::timestamptz', bounds.from);
+    if (bounds.to) add('application_deadline < ?::timestamptz', bounds.to);
     const where = clauses.join(' AND ');
     const count = await this.query<{ count: string }>(
       `SELECT count(*) FROM tenders WHERE ${where}`,
@@ -141,16 +148,19 @@ export class TenderRepository {
       activities: string[];
       types: string[];
       methods: string[];
+      deadlines: number;
     }>(`SELECT ARRAY(SELECT DISTINCT industry_group FROM tenders ORDER BY industry_group) AS industries,
       ARRAY(SELECT DISTINCT activity FROM tenders ORDER BY activity) AS activities,
       ARRAY(SELECT DISTINCT procurement_type FROM tenders ORDER BY procurement_type) AS types,
-      ARRAY(SELECT DISTINCT procurement_method FROM tenders ORDER BY procurement_method) AS methods`);
+      ARRAY(SELECT DISTINCT procurement_method FROM tenders ORDER BY procurement_method) AS methods,
+      (SELECT count(application_deadline)::int FROM tenders) AS deadlines`);
     return {
       regions,
       industryGroups: rows[0]!.industries,
       activities: rows[0]!.activities,
       procurementTypes: rows[0]!.types,
       procurementMethods: rows[0]!.methods,
+      deadlineCount: rows[0]!.deadlines,
       demoNow: config.demoNow,
       model: {
         id: config.modelId,
@@ -230,7 +240,7 @@ export class TenderRepository {
       `SELECT count(*)::int total, count(*) FILTER (WHERE ${where})::int candidates FROM tenders`,
       values,
     );
-    // Apply structured filters before ranking the full eligible set by title similarity.
+    // Apply explicit filters before ranking the entire eligible set by full-row similarity.
     const rankingValues = [...values, vectorLiteral(vector)];
     const result = await this.query<RankedTenderRow>(
       `SELECT id,external_number,title,region_id,created_at,industry_group,activity,procurement_method,procurement_type,description,status,application_deadline,source,content_hash, embedding <=> $${values.length + 1}::vector AS distance

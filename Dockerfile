@@ -4,7 +4,8 @@ COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY frontend/package.json ./frontend/
 COPY shared/package.json ./shared/
-RUN npm ci --no-audit --no-fund
+# Inference is CPU-only; the Linux installer otherwise downloads unused CUDA binaries.
+RUN ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm ci --no-audit --no-fund
 
 FROM dependencies AS build
 COPY backend ./backend

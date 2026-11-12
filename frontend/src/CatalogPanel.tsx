@@ -1,6 +1,7 @@
 import type { Catalog, Tender } from '@bnect/shared';
 import { useTenderCatalog } from './hooks/useTenderCatalog';
-import { Empty, Icon, Loading, TenderCard } from './ui';
+import { Empty, Icon, Loading, Notice, TenderCard } from './ui';
+import DeadlineFilterFields from './DeadlineFilterFields';
 
 export default function CatalogPanel({
   catalog,
@@ -17,6 +18,9 @@ export default function CatalogPanel({
     activity,
     procurementType,
     procurementMethod,
+    deadlineFrom,
+    deadlineTo,
+    invalidDeadlineRange,
     page,
     setPage,
     data,
@@ -28,6 +32,8 @@ export default function CatalogPanel({
     changeActivity,
     changeProcurementType,
     changeProcurementMethod,
+    changeDeadlineFrom,
+    changeDeadlineTo,
     submitSearch,
     retry,
   } = useTenderCatalog();
@@ -56,11 +62,11 @@ export default function CatalogPanel({
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <button className="btn" type="submit">
+        <button className="btn primary" type="submit">
           Найти
         </button>
       </form>
-      <div className="similar-filter-grid" style={{ marginBottom: 12 }}>
+      <div className="similar-filter-grid catalog-filters">
         <label className="field">
           <span>Регион</span>
           <select
@@ -112,8 +118,22 @@ export default function CatalogPanel({
             </select>
           </label>
         ))}
+        <DeadlineFilterFields
+          from={deadlineFrom}
+          to={deadlineTo}
+          onFromChange={changeDeadlineFrom}
+          onToChange={changeDeadlineTo}
+        />
+        {catalog.deadlineCount === 0 && (
+          <div className="deadline-filter-note">
+            <Notice kind="info">
+              В загруженных закупках сроки подачи заявок не указаны. Фильтр по сроку пока не даст
+              результатов.
+            </Notice>
+          </div>
+        )}
       </div>
-      {loading ? (
+      {invalidDeadlineRange ? null : loading ? (
         <Loading text="Обновляем список закупок…" />
       ) : error ? (
         <Empty

@@ -30,41 +30,42 @@ function setup(regionId: string | null) {
   return { selected, service, search };
 }
 
-describe('strict region constraint before similarity ranking', () => {
+describe('explicit geography filters before full-row similarity ranking', () => {
   it.each(['astana', 'atyrau', 'almaty', 'almaty-region'])(
-    'constrains search to exactly %s before selecting top five',
+    'searches all cities by default when the source is in %s',
     async (regionId) => {
       const { service, selected, search } = setup(regionId);
       const response = await service.recommendSimilar(selected.id);
       const filters = search.mock.calls[0]![2];
       expect(search).toHaveBeenCalledWith([1, 0], undefined, filters, selected.id);
-      expect(filters).toMatchObject({ regionMode: 'selected', regionIds: [regionId] });
+      expect(filters).toMatchObject({ regionMode: 'all', regionIds: [] });
       const sql = buildRecommendationConditions(undefined, filters, selected.id);
-      expect(sql.clauses).toContain('region_id = ANY($1::text[])');
-      expect(sql.values).toEqual([[regionId], selected.id]);
+      expect(sql.clauses).toEqual(['TRUE', 'id <> $1']);
+      expect(sql.values).toEqual([selected.id]);
       expect(response.filters).toEqual(filters);
-      expect(isEligible({ ...selected, regionId: 'karaganda' }, profile, filters)).toBe(false);
-      expect(isEligible({ ...selected, regionId: null }, profile, filters)).toBe(false);
+      expect(isEligible({ ...selected, regionId: 'karaganda' }, profile, filters)).toBe(true);
+      expect(isEligible({ ...selected, regionId: null }, profile, filters)).toBe(true);
     },
   );
 
-  it('does not group unknown geography or fall back to other regions', async () => {
+  it('can recommend tenders when source geography is unknown', async () => {
     const { service, selected } = setup(null);
     const response = await service.recommendSimilar(selected.id);
-    expect(response.filters).toMatchObject({ regionMode: 'selected', regionIds: [] });
-    expect(buildRecommendationConditions(undefined, response.filters).values).toEqual([[]]);
-    expect(isEligible(selected, profile, response.filters)).toBe(false);
+    expect(response.filters).toMatchObject({ regionMode: 'all', regionIds: [] });
+    expect(buildRecommendationConditions(undefined, response.filters).values).toEqual([]);
+    expect(isEligible(selected, profile, response.filters)).toBe(true);
     expect(response.results).toEqual([]);
   });
-  it('passes selected activity and service filters to SQL without changing the region', async () => {
+  it('applies the explicitly selected city, activity and service filters together', async () => {
     const { service, selected, search } = setup('astana');
     const response = await service.recommendSimilar(selected.id, {
+      regionIds: ['almaty'],
       activities: ['Ремонт помещений'],
       procurementTypes: ['Услуги'],
     });
     const filters = search.mock.calls[0]![2];
     expect(filters).toMatchObject({
-      regionIds: ['astana'],
+      regionIds: ['almaty'],
       activities: ['Ремонт помещений'],
       procurementTypes: ['Услуги'],
     });
@@ -76,21 +77,31 @@ describe('strict region constraint before similarity ranking', () => {
       'id <> $4',
     ]);
     expect(response.query.text).toBeDefined();
+    expect(isEligible({ ...selected, regionId: 'astana' }, profile, filters)).toBe(false);
+  });
+  it('rejects unknown city IDs', async () => {
+    const { service, selected } = setup('astana');
+    await expect(
+      service.recommendSimilar(selected.id, { regionIds: ['unknown-city'] }),
+    ).rejects.toMatchObject({ code: 'UNKNOWN_REGION' });
   });
 
   it.each([
-    ['all', [], ['astana']],
-    ['selected', ['astana', 'atyrau'], ['astana']],
-    ['selected', ['atyrau'], []],
-  ] as const)('also restricts legacy POST with %s / %j', async (regionMode, ids, expected) => {
-    const { service, selected, search } = setup('astana');
-    const request: RecommendationRequest = {
-      profile,
-      filters: { regionMode, selectedRegionIds: [...ids] },
-    };
-    const response = await service.recommend(request, selected.id);
-    expect(response.filters.regionMode).toBe('selected');
-    expect(response.filters.regionIds).toEqual(expected);
-    expect(search).toHaveBeenCalledWith([1, 0], profile, response.filters, selected.id);
-  });
+    ['all', [], []],
+    ['selected', ['astana', 'atyrau'], ['astana', 'atyrau']],
+    ['selected', ['atyrau'], ['atyrau']],
+  ] as const)(
+    'preserves explicit legacy POST filters with %s / %j',
+    async (regionMode, ids, expected) => {
+      const { service, selected, search } = setup('astana');
+      const request: RecommendationRequest = {
+        profile,
+        filters: { regionMode, selectedRegionIds: [...ids] },
+      };
+      const response = await service.recommend(request, selected.id);
+      expect(response.filters.regionMode).toBe(regionMode);
+      expect(response.filters.regionIds).toEqual(expected);
+      expect(search).toHaveBeenCalledWith([1, 0], profile, response.filters, selected.id);
+    },
+  );
 });

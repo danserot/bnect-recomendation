@@ -6,10 +6,12 @@ import PriceHistoryExplanation from './PriceHistoryExplanation';
 
 export default function PriceChart({
   data,
+  region,
   comparisonRegion,
   searchQuery = '',
 }: {
   data: PurchaseAnalytics;
+  region: string;
   comparisonRegion: string;
   searchQuery?: string;
 }) {
@@ -33,7 +35,7 @@ export default function PriceChart({
     );
   const points = data.buckets
     .flatMap((b) => [b.main.price, b.comparison?.price ?? null])
-    .filter((v): v is number => v !== null);
+    .filter((v): v is number => v !== null && Number.isFinite(v) && v > 0);
   if (selected?.unitPrice !== null && selected?.unitPrice !== undefined && selected.date)
     points.push(selected.unitPrice);
   const datePoints = data.buckets.map((b) => Date.parse(b.from));
@@ -59,7 +61,7 @@ export default function PriceChart({
     return data.buckets
       .map((b) => {
         const value = b[group]?.price;
-        if (value === null || value === undefined) {
+        if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) {
           drawing = false;
           return '';
         }
@@ -73,7 +75,7 @@ export default function PriceChart({
     <div className="purchase-chart">
       <div className="purchase-chart-heading">
         <div>
-          <h2>Динамика средней цены</h2>
+          <h2>История средней цены</h2>
           <p className="small muted">
             {selected?.currency ?? 'Валюта'} / {selected?.unit ?? 'единица товара'} ·{' '}
             {data.period.grouping === 'day'
@@ -136,12 +138,21 @@ export default function PriceChart({
           {data.buckets.flatMap((b) =>
             (['main', 'comparison'] as const).map((group) => {
               const aggregate = b[group];
-              if (!aggregate?.price) return null;
+              if (
+                !aggregate?.price ||
+                !Number.isFinite(aggregate.price) ||
+                (group === 'comparison' && !comparisonRegion)
+              )
+                return null;
               const label = describe(
                 b.from,
                 b.to,
                 aggregate,
-                group === 'main' ? 'Основной регион' : comparisonRegion,
+                group === 'main'
+                  ? data.mainIncludesSelected
+                    ? 'Единственная выбранная цена — средняя по 1 записи'
+                    : region || 'Все регионы'
+                  : comparisonRegion,
               );
               return (
                 <circle
@@ -166,10 +177,10 @@ export default function PriceChart({
             <circle
               cx={x(selected.date)}
               cy={y(selected.unitPrice)}
-              r="6"
-              fill="#2b9d68"
-              stroke="white"
-              strokeWidth="2"
+              r={data.mainIncludesSelected ? 8 : 6}
+              fill={data.mainIncludesSelected ? 'none' : '#c46a25'}
+              stroke={data.mainIncludesSelected ? '#c46a25' : 'white'}
+              strokeWidth={data.mainIncludesSelected ? 2.5 : 2}
               tabIndex={0}
               aria-label={`Выбранная закупка ${selected.number}: ${money(selected.unitPrice, selected.currency)}, ${dateLabel(selected.date)}`}
               onMouseEnter={() =>
@@ -196,17 +207,17 @@ export default function PriceChart({
       <div className="purchase-legend">
         <span>
           <i style={{ background: '#3478db' }} />
-          Основной регион
+          {data.mainIncludesSelected ? 'Средняя по 1 цене' : `Средняя · ${region || 'все регионы'}`}
         </span>
         {comparisonRegion && (
           <span>
             <i style={{ background: '#8fc4f5' }} />
-            {comparisonRegion}
+            Средняя · {comparisonRegion}
           </span>
         )}
         <span>
-          <i style={{ background: '#2b9d68' }} />
-          Выбранная закупка
+          <i style={{ background: '#c46a25' }} />
+          Цена выбранной закупки
         </span>
       </div>
       <p className="purchase-chart-completeness">{state.explanation}</p>

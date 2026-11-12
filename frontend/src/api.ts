@@ -9,6 +9,8 @@ import type {
   PurchaseAnalytics,
   PurchaseReadiness,
   TenderImportStatus,
+  ModelOverview,
+  ModelBenchmarkStatus,
 } from '@bnect/shared';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -35,6 +37,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  model: (signal?: AbortSignal) => request<ModelOverview>('/model', { signal }),
+  modelBenchmark: (signal?: AbortSignal) =>
+    request<ModelBenchmarkStatus>('/model/benchmark', { signal }),
+  startModelBenchmark: () =>
+    request<ModelBenchmarkStatus>('/model/benchmark', { method: 'POST', body: '{}' }),
   purchaseReadiness: (signal?: AbortSignal) =>
     request<PurchaseReadiness>('/analytics/readiness', { signal }),
   purchaseOptions: (signal?: AbortSignal) =>

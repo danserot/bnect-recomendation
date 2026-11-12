@@ -68,6 +68,7 @@ export async function migrate(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS tenders_region_idx ON tenders(region_id);
       CREATE INDEX IF NOT EXISTS tenders_industry_idx ON tenders(industry_group);
+      CREATE INDEX IF NOT EXISTS tenders_deadline_idx ON tenders(application_deadline);
       CREATE TABLE IF NOT EXISTS supplier_profiles (
         id text PRIMARY KEY,
         profile jsonb NOT NULL,

@@ -4,6 +4,7 @@ import { registerPurchaseRoutes } from './analytics/routes.js';
 import { registerHttpErrors } from './http-errors.js';
 import { TenderRepository } from './repository.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerModelRoutes } from './routes/model.js';
 import { registerSupplierRoutes } from './routes/suppliers.js';
 import { registerTenderImportRoutes } from './routes/tender-imports.js';
 import { registerTenderRoutes } from './routes/tenders.js';
@@ -22,6 +23,7 @@ export function buildApp(options: AppOptions = {}) {
 
   registerHttpErrors(app);
   registerHealthRoutes(app, repository);
+  registerModelRoutes(app);
   registerTenderRoutes(app, repository, service);
   registerTenderImportRoutes(app, repository);
   registerSupplierRoutes(app, suppliers);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Catalog, RecommendationResponse, Tender, SimilarTenderFilters } from '@bnect/shared';
 import { api, errorMessage } from './api';
 import TenderComparison from './comparison/TenderComparison';
+import DeadlineFilterFields from './DeadlineFilterFields';
 import {
   availability,
   Empty,
@@ -39,6 +40,9 @@ export default function TenderDrawer({
     activity: '',
     procurementType: '',
     procurementMethod: '',
+    regionId: '',
+    deadlineFrom: '',
+    deadlineTo: '',
   });
   const selected =
     selection.id === tender.id
@@ -49,13 +53,17 @@ export default function TenderDrawer({
           activity: '',
           procurementType: '',
           procurementMethod: '',
+          regionId: '',
+          deadlineFrom: '',
+          deadlineTo: '',
         };
   const filterKey = JSON.stringify(selected);
   const requestKey = `${tender.id}:${filterKey}:${retry}`;
-  const setFilter = (
-    name: 'industryGroup' | 'activity' | 'procurementType' | 'procurementMethod',
-    value: string,
-  ) => setSelection({ ...selected, [name]: value });
+  const invalidDeadlineRange = Boolean(
+    selected.deadlineFrom && selected.deadlineTo && selected.deadlineFrom > selected.deadlineTo,
+  );
+  const setFilter = (name: Exclude<keyof typeof selection, 'id'>, value: string) =>
+    setSelection({ ...selected, [name]: value });
 
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
@@ -93,9 +101,13 @@ export default function TenderDrawer({
   }, [onClose]);
 
   useEffect(() => {
+    if (invalidDeadlineRange) return;
     const controller = new AbortController();
     setState({ key: requestKey, loading: true });
     const filters: SimilarTenderFilters = {
+      ...(selected.regionId ? { regionIds: [selected.regionId] } : {}),
+      ...(selected.deadlineFrom ? { deadlineFrom: selected.deadlineFrom } : {}),
+      ...(selected.deadlineTo ? { deadlineTo: selected.deadlineTo } : {}),
       ...(selected.industryGroup ? { industryGroups: [selected.industryGroup] } : {}),
       ...(selected.activity ? { activities: [selected.activity] } : {}),
       ...(selected.procurementType ? { procurementTypes: [selected.procurementType] } : {}),
@@ -226,8 +238,26 @@ export default function TenderDrawer({
           </section>
           <section className="panel similar-filters" aria-label="Фильтры похожих закупок">
             <h3>Фильтры похожих закупок</h3>
-            <p>Сходство считается по названию. Регион совпадает с исходным тендером.</p>
+            <p>
+              Сравниваем полные сведения о закупках во всех городах. Выбранные фильтры ограничивают
+              подборку до поиска пяти результатов.
+            </p>
             <div className="similar-filter-grid">
+              <label className="field">
+                <span>Город / регион</span>
+                <select
+                  className="control"
+                  value={selected.regionId}
+                  onChange={(event) => setFilter('regionId', event.target.value)}
+                >
+                  <option value="">Все города и регионы</option>
+                  {catalog.regions.map(({ id, name }) => (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {(
                 [
                   ['industryGroup', 'Сфера (группа)', catalog.industryGroups],
@@ -252,18 +282,31 @@ export default function TenderDrawer({
                   </select>
                 </label>
               ))}
+              <DeadlineFilterFields
+                from={selected.deadlineFrom}
+                to={selected.deadlineTo}
+                onFromChange={(value) => setFilter('deadlineFrom', value)}
+                onToChange={(value) => setFilter('deadlineTo', value)}
+              />
             </div>
+            {catalog.deadlineCount === 0 && (
+              <Notice kind="info">
+                В загруженных закупках сроки подачи заявок не указаны. Фильтр по сроку пока не даст
+                результатов.
+              </Notice>
+            )}
             <details className="comparison-source-details">
               <summary>Как работает локальная модель</summary>
               <p>
                 {catalog.model.id} работает на CPU в backend из локальной папки
                 <code> .cache/models</code>. Страница передаёт ID тендера и фильтры в API; модель
-                преобразует название в вектор, а PostgreSQL сравнивает его с сохранёнными векторами
-                названий. Оценка показывает сходство, а не вероятность победы.
+                преобразует название, город, сферу, деятельность, вид и способ закупки, даты и
+                описание в вектор. PostgreSQL сравнивает его с сохранёнными векторами закупок.
+                Оценка показывает сходство, а не вероятность победы.
               </p>
             </details>
           </section>
-          {!current || current.loading ? (
+          {invalidDeadlineRange ? null : !current || current.loading ? (
             <Loading text="Ищем похожие закупки…" />
           ) : current.error ? (
             <Empty
@@ -289,9 +332,7 @@ export default function TenderDrawer({
               />
             ) : (
               <Empty title="Похожие закупки не найдены">
-                {tender.regionId
-                  ? `В регионе «${regionName(tender, catalog)}» нет закупок с выбранными фильтрами. Попробуйте снять часть фильтров.`
-                  : 'Укажите корректный регион в Excel и дождитесь обновления каталога.'}
+                Нет закупок с выбранными фильтрами. Расширьте период или снимите часть ограничений.
               </Empty>
             ))
           )}

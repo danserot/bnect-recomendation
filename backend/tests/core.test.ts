@@ -11,7 +11,7 @@ const profile = demoSuppliers[0]!;
 const tender = generateDemoTenders()[0]!;
 
 describe('stable semantic input', () => {
-  it('compares the work itself across different buildings and procurement boilerplate', () => {
+  it('embeds the full title and structured tender fields', () => {
     const first = {
       ...tender,
       title: 'Открытый тендер на электромонтажные работы по проекту Arman Qala',
@@ -21,9 +21,12 @@ describe('stable semantic input', () => {
       ...first,
       title: 'Запрос ценовых предложений на электромонтажные работы по проекту Tamga Hills',
     };
-    expect(tenderText(first)).toBe(tenderText(second));
-    expect(tenderText(first)).not.toContain('Arman Qala');
-    expect(tenderText(first)).toBe('электромонтажные работы');
+    expect(tenderText(first)).not.toBe(tenderText(second));
+    expect(tenderText(first)).toContain('Название: ' + first.title);
+    expect(tenderText(first)).toContain('Деятельность: Внутренние электромонтажные сети');
+    expect(tenderText(first)).toContain('Сфера: ' + first.industryGroup);
+    expect(tenderText(first)).toContain('Вид закупки: ' + first.procurementType);
+    expect(tenderText(first)).toContain('Способ закупки: ' + first.procurementMethod);
     expect(workSubject('Разработка проекта электроснабжения')).toBe(
       'Разработка проекта электроснабжения',
     );
@@ -32,23 +35,43 @@ describe('stable semantic input', () => {
       projectKey('Тендер на СС по проекту Gulder - 4-1 очередь'),
     );
   });
-  it('excludes tender identifiers, geography, dates and method from hash', () => {
+  it('excludes technical identifiers from the semantic hash', () => {
     const changed = {
       ...tender,
       id: 'different',
       externalNumber: 'OTHER-1',
-      regionId: null,
-      createdAt: '2000-01-01T00:00:00.000Z',
-      procurementMethod: 'Иной способ',
     };
     expect(contentHash(tenderText(changed))).toBe(contentHash(tenderText(tender)));
     expect(contentHash(tenderText({ ...tender, title: 'Иное название' }))).not.toBe(
       contentHash(tenderText(tender)),
     );
-    expect(contentHash(tenderText({ ...tender, activity: 'Иная деятельность' }))).toBe(
+    expect(contentHash(tenderText({ ...tender, activity: 'Иная деятельность' }))).not.toBe(
       contentHash(tenderText(tender)),
     );
-    expect(tenderText(tender)).toBe(workSubject(tender.title));
+  });
+  it.each([
+    { regionId: tender.regionId === 'astana' ? 'almaty' : 'astana' },
+    { createdAt: '2000-01-01T00:00:00.000Z' },
+    { industryGroup: 'Другая сфера' },
+    { procurementMethod: 'Другой способ' },
+    { procurementType: 'Другой вид' },
+    { description: 'Подробное описание нового предмета закупки' },
+    { applicationDeadline: '2030-01-01T00:00:00.000Z' },
+  ])('invalidates embeddings when business fields change: %j', (change) => {
+    expect(contentHash(tenderText({ ...tender, ...change }))).not.toBe(
+      contentHash(tenderText(tender)),
+    );
+  });
+  it('uses readable geography and canonical dates in the full row', () => {
+    const text = tenderText({
+      ...tender,
+      regionId: 'astana',
+      createdAt: '2026-10-01T05:00:00+05:00',
+      applicationDeadline: '2026-10-20T15:00:00+05:00',
+    });
+    expect(text).toContain('Регион: Астана');
+    expect(text).toContain('Дата создания: 2026-10-01T00:00:00.000Z');
+    expect(text).toContain('Срок подачи заявок: 2026-10-20T10:00:00.000Z');
   });
   it('uses specialization, excludes company name and region, stabilizes arrays', () => {
     const changed = {

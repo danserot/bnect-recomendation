@@ -19,8 +19,8 @@
 }
 .comparison-eyebrow {
   display: block;
-  color: #7a8490;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.6px;
   text-transform: uppercase;
@@ -45,8 +45,8 @@
 }
 .comparison-source-details > summary {
   cursor: pointer;
-  color: #6f7986;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: 12px;
   padding: 13px 0 0;
 }
 .comparison-source-details[open] > summary {
@@ -81,8 +81,8 @@
   vertical-align: middle;
 }
 .comparison-pool {
-  font-size: 11px;
-  color: #7b8490;
+  font-size: 12px;
+  color: var(--muted);
   white-space: nowrap;
   padding-bottom: 5px;
 }
@@ -96,17 +96,17 @@
   padding: 13px 16px;
   border-radius: 9px;
   margin-top: 18px;
-  color: #74808d;
+  color: var(--muted);
 }
 .comparison-rule > span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   color: #536171;
 }
 .comparison-rule b {
-  font-size: 10px;
+  font-size: 12px;
   border-radius: 50%;
   width: 21px;
   height: 21px;
@@ -117,8 +117,8 @@
   justify-content: center;
 }
 .comparison-context {
-  color: #78818c;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: 12px;
   line-height: 1.8;
   margin: 10px 0 21px;
 }
@@ -142,7 +142,7 @@
   padding: 8px 15px;
   background: transparent;
   color: #667280;
-  font-size: 11px;
+  font-size: 12px;
 }
 .comparison-modes button[aria-pressed='true'] {
   background: white;
@@ -153,7 +153,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   color: #667280;
   cursor: pointer;
 }
@@ -162,8 +162,8 @@
 }
 .comparison-legend {
   margin-left: auto;
-  color: #6b7e78;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -189,7 +189,7 @@
   background: white;
   border-radius: 6px;
   padding: 7px 9px;
-  font-size: 10px;
+  font-size: 12px;
   color: #6b7785;
 }
 .comparison-picker button[aria-pressed='true'] {
@@ -198,7 +198,7 @@
   color: #a05e31;
 }
 .comparison-picker b {
-  font-size: 10px;
+  font-size: 12px;
 }
 .comparison-table-scroll {
   overflow-x: auto;
@@ -213,7 +213,7 @@
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.65;
   text-align: left;
 }
@@ -253,7 +253,7 @@
 }
 .comparison-table thead p {
   margin: 9px 0 12px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
   font-weight: 500;
   color: #354453;
@@ -289,7 +289,7 @@
 .comparison-column-type,
 .comparison-number {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: #9a6b43;
 }
 .comparison-number {
@@ -302,8 +302,8 @@
   padding: 0;
   background: transparent;
   border: 0;
-  font-size: 10px;
-  color: #657b93;
+  font-size: 12px;
+  color: var(--muted);
   text-align: left;
 }
 .comparison-position {
@@ -326,19 +326,19 @@
   border: 0;
   background: transparent;
   color: #9e6339;
-  font-size: 10px;
+  font-size: 12px;
 }
 .comparison-table-hint {
-  font-size: 10px;
-  color: #8c97a3;
+  font-size: 12px;
+  color: var(--muted);
 }
 .comparison-row-label {
   padding: 0;
   text-align: left;
   background: transparent;
   border: 0;
-  color: #718090;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 12px;
   line-height: 1.7;
 }
 .comparison-table tbody tr:hover > *,
@@ -363,14 +363,14 @@
 }
 .comparison-value small {
   display: block;
-  font-size: 9px;
+  font-size: 12px;
   margin-top: 4px;
   opacity: 0.85;
 }
 .comparison-value.unknown,
 .comparison-reference {
-  color: #8b96a1;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 .comparison-badge {
   display: inline-block;
@@ -378,7 +378,7 @@
   background: #edf1f6;
   color: #63768c;
   padding: 5px 7px;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.5;
   font-weight: 500;
 }
@@ -394,13 +394,13 @@
 .comparison-date-gap,
 .comparison-score small {
   display: block;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.7;
-  color: #8b96a2;
+  color: var(--muted);
   margin-top: 4px;
 }
 .comparison-date-gap {
-  color: #617b96;
+  color: var(--muted);
 }
 .comparison-score strong {
   font-size: 15px;
@@ -408,9 +408,9 @@
   font-variant-numeric: tabular-nums;
 }
 .comparison-footnote {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
-  color: #8a939e;
+  color: var(--muted);
   margin: 10px 0 18px;
 }
 .comparison-explanation {
@@ -446,14 +446,14 @@
   border-bottom: 1px solid #edf0f3;
 }
 .comparison-findings > div > span {
-  font-size: 10px;
-  color: #54826d;
+  font-size: 12px;
+  color: var(--muted);
 }
 .comparison-findings > div + div > span {
   color: #a17948;
 }
 .comparison-findings p {
-  font-size: 11px;
+  font-size: 12px;
   color: #687584;
   line-height: 1.8;
   margin: 5px 0 0;
@@ -482,13 +482,13 @@
   margin: 12px 0;
 }
 .comparison-text-pair p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.85;
-  color: #6e7c8c;
+  color: var(--muted);
   margin-bottom: 10px;
 }
 .comparison-text-pair .comparison-description {
-  color: #8a939e;
+  color: var(--muted);
 }
 .comparison-text-pair mark {
   background: #fff0ad;
@@ -533,7 +533,7 @@
   }
   .comparison-source-summary {
     gap: 7px 12px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .comparison-heading {
     align-items: flex-start;
@@ -557,7 +557,7 @@
     display: none;
   }
   .comparison-rule > span {
-    font-size: 10px;
+    font-size: 12px;
     align-items: flex-start;
     line-height: 1.6;
   }
@@ -577,21 +577,21 @@
   .comparison-table-scroll.pair th,
   .comparison-table-scroll.pair td {
     padding: 10px 7px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .comparison-table-scroll.pair thead p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .comparison-column-select {
     flex-wrap: wrap;
-    font-size: 9px;
+    font-size: 12px;
   }
   .comparison-row-label,
   .comparison-table-hint {
-    font-size: 9px;
+    font-size: 12px;
   }
   .comparison-badge {
-    font-size: 9px;
+    font-size: 12px;
     padding: 4px 5px;
   }
   .comparison-value {
@@ -599,7 +599,7 @@
     margin: -2px;
   }
   .comparison-value small {
-    font-size: 8px;
+    font-size: 12px;
   }
   .comparison-explanation {
     padding: 16px;

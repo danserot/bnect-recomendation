@@ -19,6 +19,9 @@ export function useTenderCatalog() {
   const [activity, setActivity] = useState('');
   const [procurementType, setProcurementType] = useState('');
   const [procurementMethod, setProcurementMethod] = useState('');
+  const [deadlineFrom, setDeadlineFrom] = useState('');
+  const [deadlineTo, setDeadlineTo] = useState('');
+  const invalidDeadlineRange = Boolean(deadlineFrom && deadlineTo && deadlineFrom > deadlineTo);
   const [page, setPage] = useState(1);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<CatalogRequestState | null>(null);
@@ -29,6 +32,8 @@ export function useTenderCatalog() {
     activity,
     procurementType,
     procurementMethod,
+    deadlineFrom,
+    deadlineTo,
     page,
     attempt,
   });
@@ -44,6 +49,7 @@ export function useTenderCatalog() {
   }, [search]);
 
   useEffect(() => {
+    if (invalidDeadlineRange) return;
     const controller = new AbortController();
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
     if (query) params.set('q', query);
@@ -52,6 +58,8 @@ export function useTenderCatalog() {
     if (activity) params.set('activity', activity);
     if (procurementType) params.set('procurementType', procurementType);
     if (procurementMethod) params.set('procurementMethod', procurementMethod);
+    if (deadlineFrom) params.set('deadlineFrom', deadlineFrom);
+    if (deadlineTo) params.set('deadlineTo', deadlineTo);
 
     setState({ key: requestKey });
     api.tenders(params, controller.signal).then(
@@ -75,6 +83,9 @@ export function useTenderCatalog() {
     activity,
     procurementType,
     procurementMethod,
+    deadlineFrom,
+    deadlineTo,
+    invalidDeadlineRange,
     page,
     setPage,
     data: current?.data,
@@ -99,6 +110,14 @@ export function useTenderCatalog() {
     },
     changeProcurementMethod: (value: string) => {
       setProcurementMethod(value);
+      setPage(1);
+    },
+    changeDeadlineFrom: (value: string) => {
+      setDeadlineFrom(value);
+      setPage(1);
+    },
+    changeDeadlineTo: (value: string) => {
+      setDeadlineTo(value);
       setPage(1);
     },
     submitSearch: () => {

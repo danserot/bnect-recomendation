@@ -112,27 +112,33 @@ export default function TenderComparison({
           </h2>
         </div>
         <span className="comparison-pool">
-          Из {data.candidateCount.toLocaleString('ru-RU')} доступных в регионе
+          Из {data.candidateCount.toLocaleString('ru-RU')} подходящих закупок
         </span>
       </div>
 
       <div className="comparison-rule" aria-label="Как составлена подборка">
         <span>
-          <b>1</b> Тот же регион
+          <b>1</b> Все города или выбранный регион
         </span>
         <Icon name="chevron" size={12} />
         <span>
-          <b>2</b> Выбранные фильтры
+          <b>2</b> Фильтры и срок подачи
         </span>
         <Icon name="chevron" size={12} />
         <span>
-          <b>3</b> Сходство названий
+          <b>3</b> Сходство полных сведений
         </span>
       </div>
       <p className="comparison-context">
-        Фильтры применяются до расчёта первых пяти результатов. Дата и деятельность показаны для
-        сравнения и не меняют порядок.
+        Возвращаем пять результатов, если под выбранные фильтры подходит хотя бы пять закупок.
+        Город, сфера, деятельность и остальные сведения участвуют в смысловом сравнении.
       </p>
+      {data.results.length < 5 && (
+        <p className="comparison-context">
+          Под выбранные фильтры подходит только {data.candidateCount} закупок. Расширьте период или
+          снимите часть ограничений, чтобы получить больше результатов.
+        </p>
+      )}
 
       <div className="comparison-toolbar">
         <div className="comparison-modes" role="group" aria-label="Вид сравнения">
@@ -279,8 +285,8 @@ export default function TenderComparison({
               )}
             {row(
               'score',
-              'Сходство предмета',
-              <span className="comparison-subtext">Учитывается при равной разнице дат</span>,
+              'Сходство полных сведений',
+              <span className="comparison-subtext">Определяет порядок рекомендаций</span>,
               (item) => (
                 <div className="comparison-score">
                   <strong>{item.similarity.toFixed(2)}</strong>
@@ -337,8 +343,8 @@ export default function TenderComparison({
           <PriorityBadge source={source} candidate={selected.tender} />
         </div>
         <p className="comparison-reason">
-          Тендер прошёл фильтры региона и выбранных полей. Оценка сходства названий —{' '}
-          {selected.similarity.toFixed(2)}. Дата и совпадение деятельности показаны для справки.
+          Тендер прошёл выбранные фильтры, включая срок подачи заявок, если указан период. Оценка
+          смыслового сходства полных сведений — {selected.similarity.toFixed(2)}.
         </p>
         <div className="comparison-findings">
           <div>

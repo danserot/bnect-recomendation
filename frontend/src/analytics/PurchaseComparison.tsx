@@ -8,6 +8,8 @@ interface PurchaseComparisonProps {
   comparisonRegion: string;
   requestKey: string;
   searchQuery: string;
+  showChart: boolean;
+  onToggleChart: () => void;
 }
 
 export default function PurchaseComparison({
@@ -16,13 +18,32 @@ export default function PurchaseComparison({
   comparisonRegion,
   requestKey,
   searchQuery,
+  showChart,
+  onToggleChart,
 }: PurchaseComparisonProps) {
   return (
-    <section className="panel purchase-analysis" aria-label="Сравнение цен">
+    <section
+      className={`panel purchase-analysis ${showChart ? '' : 'purchase-analysis-collapsed'}`}
+      aria-label="Сравнение цен"
+    >
+      <div className="purchase-analysis-heading">
+        <div>
+          <span className="eyebrow">Сопоставимые закупки</span>
+          <h2>Цена и средняя за период</h2>
+        </div>
+        <button
+          className="purchase-chart-toggle"
+          type="button"
+          aria-expanded={showChart}
+          aria-controls="purchase-price-history"
+          onClick={onToggleChart}
+        >
+          {showChart ? 'Скрыть график' : 'Показать график'}
+        </button>
+      </div>
       <div className="purchase-metrics">
-        <h2>Цена за единицу</h2>
-        <div className="purchase-metric">
-          <span>Выбранная закупка</span>
+        <div className="purchase-metric purchase-metric-selected">
+          <span>Цена выбранной закупки</span>
           <strong>
             {data.selected ? money(data.selected.unitPrice, data.selected.currency) : '—'}
           </strong>
@@ -33,13 +54,16 @@ export default function PurchaseComparison({
           </small>
         </div>
         <Metric
-          label={`Средняя цена по данным Excel${region ? ` · ${region}` : ''}`}
+          label={`Средняя цена · ${region || 'все регионы'}`}
           aggregate={data.main}
           selected={data.selected}
+          className="purchase-metric-average"
+          reason={data.reason}
+          selectedOnly={data.mainIncludesSelected}
         />
         {comparisonRegion && data.comparison && (
           <Metric
-            label={`Сравнение · ${comparisonRegion}`}
+            label={`Средняя цена · ${comparisonRegion}`}
             aggregate={data.comparison}
             selected={data.selected}
           />
@@ -47,14 +71,19 @@ export default function PurchaseComparison({
         <div
           className={`purchase-difference ${data.difference !== null && data.difference < 0 ? 'lower' : ''}`}
         >
-          {differenceLabel(data.difference)}
+          {data.mainIncludesSelected
+            ? 'Средняя равна выбранной цене: для сравнения в основной группе нужна ещё одна закупка'
+            : differenceLabel(data.difference)}
         </div>
         <p className="small muted">
           Период:{' '}
           {data.period.from
             ? `${dateLabel(data.period.from)} – ${dateLabel(data.period.to)}`
             : 'все даты из файла'}
-          . Выбранная закупка исключена из обеих групп.
+          .{' '}
+          {data.mainIncludesSelected
+            ? 'Основная средняя рассчитана по выбранной закупке; из дополнительной группы она исключена.'
+            : 'Выбранная закупка исключена из обеих групп.'}
         </p>
         {data.selected && (
           <p className="small muted">
@@ -70,12 +99,17 @@ export default function PurchaseComparison({
           </p>
         )}
       </div>
-      <PriceChart
-        key={requestKey}
-        data={data}
-        comparisonRegion={comparisonRegion}
-        searchQuery={searchQuery}
-      />
+      <div id="purchase-price-history" hidden={!showChart}>
+        {showChart && (
+          <PriceChart
+            key={requestKey}
+            data={data}
+            region={region}
+            comparisonRegion={comparisonRegion}
+            searchQuery={searchQuery}
+          />
+        )}
+      </div>
     </section>
   );
 }
@@ -91,21 +125,35 @@ function Metric({
   label,
   aggregate,
   selected,
+  className = '',
+  reason,
+  selectedOnly = false,
 }: {
   label: string;
   aggregate: PriceAggregate;
   selected: Purchase | null;
+  className?: string;
+  reason?: string | null;
+  selectedOnly?: boolean;
 }) {
   return (
-    <div className="purchase-metric">
+    <div className={`purchase-metric ${className}`}>
       <span>{label}</span>
       <strong>{money(aggregate.price, selected?.currency ?? null)}</strong>
       <small>
-        {aggregate.count
-          ? `${aggregate.count} записей · ${selected?.unit ?? 'ед.'}`
-          : 'Нет сопоставимых записей'}
+        {selectedOnly
+          ? 'Только 1 запись — выбранная закупка'
+          : aggregate.count === 1
+            ? 'Только 1 сопоставимая закупка'
+            : aggregate.count
+              ? `${aggregate.count} записей · ${selected?.unit ?? 'ед.'}`
+              : reason || (selected ? 'Нет сопоставимых записей' : 'Выберите строку в каталоге')}
       </small>
-      {aggregate.method && (
+      {selectedOnly && (
+        <small>Средняя по одной цене равна этой цене. В основной группе других цен нет.</small>
+      )}
+      {selectedOnly && reason && <small>{reason}</small>}
+      {aggregate.method && !selectedOnly && (
         <small>
           {aggregate.method === 'weighted'
             ? `Средневзвешенная · объём ${numeric(aggregate.volume)} ${selected?.unit ?? ''}`

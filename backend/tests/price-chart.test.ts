@@ -43,6 +43,7 @@ function history(prices: (number | null)[], comparison?: (number | null)[]): Pur
     pageSize: 20,
     selected: { ...selected },
     main: aggregate(prices),
+    mainIncludesSelected: false,
     comparison: comparison ? aggregate(comparison) : null,
     difference: null,
     reason: null,
@@ -58,23 +59,43 @@ function history(prices: (number | null)[], comparison?: (number | null)[]): Pur
 }
 
 describe('price chart completeness', () => {
-  test('a selected price alone does not produce a graph or legend', () => {
+  test('an undated selected-only price has a mean but no time-series point', () => {
     const data = history([null, null, null]);
+    data.selected = { ...selected, date: null };
+    data.main = aggregate([120]);
+    data.mainIncludesSelected = true;
     expect(priceChartState(data, '')).toMatchObject({
       visible: false,
       reason: 'empty',
       main: { filled: 0, missing: 3 },
     });
-    const html = renderToStaticMarkup(createElement(PriceChart, { data, comparisonRegion: '' }));
+    const html = renderToStaticMarkup(
+      createElement(PriceChart, { data, region: 'Астана', comparisonRegion: '' }),
+    );
     expect(html).not.toContain('purchase-chart-svg');
     expect(html).not.toContain('purchase-legend');
     expect(html).toContain('Разбор выбранной закупки');
     expect(html).toContain('EXAMPLE-SELECTED');
   });
-  test('one interval cannot be presented as a price history', () => {
-    expect(priceChartState(history([100]), '')).toMatchObject({ visible: false, reason: 'single' });
+  test('one selected price appears as a one-observation mean and chart point', () => {
+    const data = history([null, null, 120]);
+    data.main = aggregate([120]);
+    data.mainIncludesSelected = true;
+    expect(priceChartState(data, '')).toMatchObject({
+      visible: true,
+      reason: 'single',
+      main: { filled: 1, datedRows: 1 },
+    });
+    const html = renderToStaticMarkup(
+      createElement(PriceChart, { data, region: 'Астана', comparisonRegion: '' }),
+    );
+    expect(html).toContain('Средняя по 1 цене');
+    expect(html).toContain('Одна точка не показывает динамику');
+  });
+  test('one interval is shown as an observation without claiming a trend', () => {
+    expect(priceChartState(history([100]), '')).toMatchObject({ visible: true, reason: 'single' });
     expect(priceChartState(history([null, 100, null]), '')).toMatchObject({
-      visible: false,
+      visible: true,
       reason: 'single',
     });
   });
@@ -82,40 +103,53 @@ describe('price chart completeness', () => {
     [null, 100, 120],
     [100, null, 120],
     [100, 120, null],
-  ])('a missing boundary or internal interval hides the whole graph (%j)', (...prices) => {
+  ])('a missing boundary or internal interval leaves a visible gap (%j)', (...prices) => {
     expect(priceChartState(history(prices), '')).toMatchObject({
-      visible: false,
+      visible: true,
       reason: 'gaps',
       main: { total: 3, filled: 2, missing: 1, datedRows: 2 },
     });
+    const html = renderToStaticMarkup(
+      createElement(PriceChart, { data: history(prices), region: 'Астана', comparisonRegion: '' }),
+    );
+    expect(html).toContain('purchase-chart-svg');
   });
-  test('every requested group must cover every interval', () => {
+  test('an incomplete comparison series does not suppress the main chart', () => {
     expect(
       priceChartState(history([100, 110, 120], [200, null, 220]), 'Другой регион'),
-    ).toMatchObject({ visible: false, reason: 'gaps' });
+    ).toMatchObject({ visible: true, reason: 'gaps' });
     expect(
       priceChartState(history([100, 110, 120], [200, 210, 220]), 'Другой регион'),
     ).toMatchObject({ visible: true, reason: 'complete' });
     expect(priceChartState(history([100, 110, 120], [200, null, 220]), '').visible).toBe(true);
   });
-  test('missing dates or selected price prevent showing a complete chart', () => {
+  test('missing selected date or undated rows are explained without hiding observed prices', () => {
     const data = history([100, 110, 120]);
     expect(priceChartState({ ...data, selected: null }, '').reason).toBe('select');
-    expect(priceChartState({ ...data, selected: { ...selected, date: null } }, '').reason).toBe(
-      'date',
-    );
+    expect(priceChartState({ ...data, selected: { ...selected, date: null } }, '')).toMatchObject({
+      visible: true,
+      reason: 'gaps',
+    });
     expect(
       priceChartState({ ...data, selected: { ...selected, unitPrice: null } }, '').reason,
     ).toBe('price');
-    expect(priceChartState({ ...data, undated: 1 }, '').reason).toBe('undated');
+    expect(priceChartState({ ...data, undated: 1 }, '')).toMatchObject({
+      visible: true,
+      reason: 'gaps',
+    });
     const invalid = history([100, 110, 120]);
     invalid.buckets[1].main.price = NaN;
-    expect(priceChartState(invalid, '').visible).toBe(false);
+    expect(priceChartState(invalid, '').visible).toBe(true);
   });
   test('a complete series renders a chart and a factual breakdown', () => {
     const data = history([100, 110, 120]);
     const html = renderToStaticMarkup(
-      createElement(PriceChart, { data, comparisonRegion: '', searchQuery: 'EXAMPLE' }),
+      createElement(PriceChart, {
+        data,
+        region: 'Астана',
+        comparisonRegion: '',
+        searchQuery: 'EXAMPLE',
+      }),
     );
     expect(html).toContain('purchase-chart-svg');
     expect(html).toContain('purchase-legend');

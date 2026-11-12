@@ -7,22 +7,23 @@ import { Loading, Notice } from './ui';
 import TenderMap from './TenderMap';
 import PurchaseAnalyticsPage from './analytics/PurchaseAnalyticsPage';
 import { useTenderImportStatus } from './hooks/useTenderImportStatus';
+import WorkspaceLayout, { NAVIGATION, type Tab } from './WorkspaceLayout';
 
 const IntegrationReport = lazy(() => import('./report/IntegrationReport'));
-const NAVIGATION = [
-  ['catalog', 'Закупки'],
-  ['analytics', 'Аналитика'],
-  ['map', 'Карта векторов'],
-  ['report', 'Внедрение'],
-] as const;
-type Tab = (typeof NAVIGATION)[number][0];
+const ModelPage = lazy(() => import('./model/ModelPage'));
+
+function currentTab(): Tab {
+  const hash = window.location.hash.slice(1);
+  if (hash.startsWith('report-')) return 'report';
+  return NAVIGATION.find(([id]) => id === hash)?.[0] ?? 'catalog';
+}
 
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
-  const [tab, setTab] = useState<Tab>('catalog');
+  const [tab, setTab] = useState<Tab>(currentTab);
   const [mapTenderId, setMapTenderId] = useState<string>();
   const handleImportReady = useCallback(() => {
     setAttempt((value) => value + 1);
@@ -34,6 +35,12 @@ export default function App() {
     setMapTenderId(tender.id);
   };
   const closeTender = useCallback(() => setSelectedTender(null), []);
+
+  useEffect(() => {
+    const update = () => setTab(currentTab());
+    window.addEventListener('hashchange', update);
+    return () => window.removeEventListener('hashchange', update);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,89 +57,76 @@ export default function App() {
   }, [attempt]);
 
   return (
-    <div className="shell">
-      <header className="topbar restored-header">
-        <div className="topbar-inner">
-          <nav className="nav" aria-label="Основные разделы">
-            {NAVIGATION.map(([id, label]) => (
-              <button
-                className={`nav-button ${tab === id ? 'active' : ''}`}
-                key={id}
-                onClick={() => setTab(id)}
-                aria-current={tab === id ? 'page' : undefined}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </header>
-      <main
-        className={`main simple-main ${tab === 'report' ? 'report-main' : tab === 'analytics' ? 'analytics-main' : ''}`}
-      >
-        {tab !== 'analytics' &&
-          tab !== 'report' &&
-          importStatus &&
-          !['waiting', 'ready'].includes(importStatus.stage) && (
-            <div style={{ marginBottom: 18 }}>
-              <Notice kind={importStatus.stage === 'error' ? 'error' : 'info'}>
-                {importStatus.message}
-                {importStatus.errors?.map((item, i) => (
-                  <div key={i}>
-                    Строка {item.row}: {item.field} — {item.message}
-                  </div>
-                ))}
-              </Notice>
-            </div>
-          )}
-        {tab === 'catalog' && (
-          <div className="page-heading">
-            <div>
-              <h1>Закупки</h1>
-              <p className="subtitle">Выберите тендер для просмотра похожих закупок.</p>
-            </div>
+    <WorkspaceLayout
+      tab={tab}
+      onNavigate={(id) => {
+        setTab(id);
+        window.location.hash = id;
+      }}
+    >
+      {tab !== 'analytics' &&
+        tab !== 'report' &&
+        tab !== 'model' &&
+        importStatus &&
+        !['waiting', 'ready'].includes(importStatus.stage) && (
+          <div style={{ marginBottom: 18 }}>
+            <Notice kind={importStatus.stage === 'error' ? 'error' : 'info'}>
+              {importStatus.message}
+              {importStatus.errors?.map((item, i) => (
+                <div key={i}>
+                  Строка {item.row}: {item.field} — {item.message}
+                </div>
+              ))}
+            </Notice>
           </div>
         )}
-        {tab === 'report' ? (
-          <Suspense fallback={<Loading text="Открываем план внедрения…" />}>
-            <IntegrationReport />
-          </Suspense>
-        ) : tab === 'analytics' ? (
-          <PurchaseAnalyticsPage />
-        ) : error ? (
-          <section className="panel boot-error">
-            <h2>Не удалось загрузить закупки</h2>
-            <p>{error}</p>
-            <button className="btn primary" onClick={() => setAttempt((value) => value + 1)}>
-              Повторить
-            </button>
-          </section>
-        ) : !catalog ? (
-          <Loading text="Загружаем закупки…" />
-        ) : (
-          <>
-            {tab === 'catalog' && (
-              <CatalogPanel key={attempt} catalog={catalog} onOpen={openTender} />
-            )}
-            {tab === 'map' && (
-              <TenderMap
-                key={attempt}
-                catalog={catalog}
-                tenderId={mapTenderId}
-                onOpen={openTender}
-              />
-            )}
-            {selectedTender && (
-              <TenderDrawer
-                tender={selectedTender}
-                catalog={catalog}
-                onClose={closeTender}
-                onOpen={openTender}
-              />
-            )}
-          </>
-        )}
-      </main>
-    </div>
+      {tab === 'catalog' && (
+        <div className="page-heading">
+          <div>
+            <span className="eyebrow">Каталог тендеров</span>
+            <h1>Закупки</h1>
+            <p className="subtitle">Выберите тендер для просмотра похожих закупок.</p>
+          </div>
+        </div>
+      )}
+      {tab === 'model' ? (
+        <Suspense fallback={<Loading text="Открываем описание модели…" />}>
+          <ModelPage />
+        </Suspense>
+      ) : tab === 'report' ? (
+        <Suspense fallback={<Loading text="Открываем план внедрения…" />}>
+          <IntegrationReport />
+        </Suspense>
+      ) : tab === 'analytics' ? (
+        <PurchaseAnalyticsPage />
+      ) : error ? (
+        <section className="panel boot-error">
+          <h2>Не удалось загрузить закупки</h2>
+          <p>{error}</p>
+          <button className="btn primary" onClick={() => setAttempt((value) => value + 1)}>
+            Повторить
+          </button>
+        </section>
+      ) : !catalog ? (
+        <Loading text="Загружаем закупки…" />
+      ) : (
+        <>
+          {tab === 'catalog' && (
+            <CatalogPanel key={attempt} catalog={catalog} onOpen={openTender} />
+          )}
+          {tab === 'map' && (
+            <TenderMap key={attempt} catalog={catalog} tenderId={mapTenderId} onOpen={openTender} />
+          )}
+          {selectedTender && (
+            <TenderDrawer
+              tender={selectedTender}
+              catalog={catalog}
+              onClose={closeTender}
+              onOpen={openTender}
+            />
+          )}
+        </>
+      )}
+    </WorkspaceLayout>
   );
 }

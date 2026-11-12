@@ -88,9 +88,9 @@
 }
 .integration-table-scroll thead th {
   background: #f7f8fa;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  color: #707b88;
+  color: var(--muted);
 }
 .integration-table-scroll tbody th {
   font-weight: 500;
@@ -112,7 +112,7 @@
 }
 .integration-section .integration-example-label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .integration-readiness-top {
   display: flex;
@@ -162,15 +162,15 @@
 }
 .integration-readiness small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
-  color: #85909e;
+  color: var(--muted);
 }
 .integration-data-error {
   color: #985844;
 }
 .integration-loading {
-  color: #7c8796;
+  color: var(--muted);
 }
 @media (max-width: 600px) {
   .integration-section {
@@ -184,7 +184,7 @@
     padding: 13px;
   }
   .integration-contents a {
-    font-size: 11px;
+    font-size: 12px;
     padding: 6px 9px;
   }
   .integration-section h2 {

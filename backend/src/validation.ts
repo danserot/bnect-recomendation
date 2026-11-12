@@ -1,11 +1,24 @@
 import { z } from 'zod';
-import type { RecommendationRequest, SupplierProfile } from '@bnect/shared';
+import type { DeadlineFilters, RecommendationRequest, SupplierProfile } from '@bnect/shared';
 
 const text = z.string().trim().min(1).max(200);
 const values = z
   .array(text)
   .max(100)
   .refine((items) => new Set(items).size === items.length, 'Значения не должны повторяться.');
+const deadlineFields = {
+  deadlineFrom: z.iso.date().optional(),
+  deadlineTo: z.iso.date().optional(),
+};
+function validateDeadlineRange(filters: DeadlineFilters, context: z.RefinementCtx) {
+  if (filters.deadlineFrom && filters.deadlineTo && filters.deadlineFrom > filters.deadlineTo) {
+    context.addIssue({
+      code: 'custom',
+      path: ['deadlineTo'],
+      message: 'Дата «по» должна быть не раньше даты «с».',
+    });
+  }
+}
 
 export const supplierSchema = z
   .object({
@@ -28,6 +41,7 @@ export const recommendationSchema = z
     profile: supplierSchema,
     filters: z
       .object({
+        ...deadlineFields,
         regionMode: z.enum(['supplier', 'selected', 'all']).default('supplier'),
         selectedRegionIds: values.default([]),
         industryGroups: values.optional(),
@@ -36,14 +50,15 @@ export const recommendationSchema = z
         procurementMethods: values.optional(),
         applySupplierIndustryGroups: z.boolean().optional(),
         applySupplierProcurementTypes: z.boolean().optional(),
-        onlyOpen: z.boolean().optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine(validateDeadlineRange),
   })
   .strict() satisfies z.ZodType<RecommendationRequest>;
 
 export const listQuerySchema = z
   .object({
+    ...deadlineFields,
     q: z.string().trim().max(200).optional(),
     regionId: text.optional(),
     industryGroup: text.optional(),
@@ -53,15 +68,20 @@ export const listQuerySchema = z
     page: z.coerce.number().int().min(1).max(100000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(12),
   })
-  .strict();
+  .strict()
+  .superRefine(validateDeadlineRange);
 
 export type ListQuery = z.infer<typeof listQuerySchema>;
 
 export const similarFiltersSchema = z
   .object({
+    ...deadlineFields,
+    regionIds: values.optional(),
     industryGroups: values.optional(),
     activities: values.optional(),
     procurementTypes: values.optional(),
     procurementMethods: values.optional(),
+    onlyOpen: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(validateDeadlineRange);

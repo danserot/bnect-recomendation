@@ -1,5 +1,6 @@
 import type { Purchase, PurchaseAnalytics } from '@bnect/shared';
 import { dateLabel, money, numeric } from './format';
+import { Icon } from '../ui';
 
 interface PurchaseColumn {
   key: string;
@@ -142,7 +143,7 @@ export default function PurchaseCatalog({
       ) : (
         <div className="purchase-empty">
           <div className="purchase-empty-icon" aria-hidden="true">
-            ▤
+            <Icon name="briefcase" size={24} />
           </div>
           <h2>{totalRecords ? 'Закупки не найдены' : 'Добавьте Excel с закупками'}</h2>
           <p>

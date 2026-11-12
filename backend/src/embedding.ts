@@ -30,6 +30,10 @@ export class LocalE5EmbeddingProvider implements EmbeddingProvider {
     };
   }
 
+  async initialize(): Promise<void> {
+    await this.model();
+  }
+
   private async model(): Promise<Extractor> {
     if (!this.modelPromise) {
       this.state = 'loading';
@@ -50,7 +54,7 @@ export class LocalE5EmbeddingProvider implements EmbeddingProvider {
       })().catch((error: unknown) => {
         this.state = 'error';
         this.lastError = error instanceof Error ? error.message : String(error);
-        this.modelPromise = undefined; // A later explicit user request can retry a failed download.
+        this.modelPromise = undefined; // A later request can retry loading the local files.
         throw new AppError(
           503,
           'MODEL_UNAVAILABLE',
@@ -102,15 +106,17 @@ export class LocalE5EmbeddingProvider implements EmbeddingProvider {
     return task;
   }
 
-  async embedQuery(text: string): Promise<number[]> {
+  async embedQuery(text: string, options: { cache?: boolean } = {}): Promise<number[]> {
     const key = createHash('sha256')
       .update(`${config.modelId}|${config.embeddingVersion}|query: ${text}`)
       .digest('hex');
-    const cached = this.cache.get(key);
+    const cached = options.cache === false ? undefined : this.cache.get(key);
     if (cached) return [...cached];
     const [vector] = await this.extract([`query: ${text}`]);
-    this.cache.set(key, vector!);
-    if (this.cache.size > 128) this.cache.delete(this.cache.keys().next().value!);
+    if (options.cache !== false) {
+      this.cache.set(key, vector!);
+      if (this.cache.size > 128) this.cache.delete(this.cache.keys().next().value!);
+    }
     return [...vector!];
   }
 

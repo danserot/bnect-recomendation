@@ -11,13 +11,7 @@ import type {
 } from '@bnect/shared';
 import { config } from './config.js';
 import { embeddingProvider, type EmbeddingProvider } from './embedding.js';
-import {
-  availability,
-  isEligible,
-  regionalDescription,
-  resolveFilters,
-  restrictToTenderRegion,
-} from './filters.js';
+import { availability, isEligible, regionalDescription, resolveFilters } from './filters.js';
 import { PcaCache, projectPca } from './pca.js';
 import { TenderRepository } from './repository.js';
 import { supplierText, tenderText } from './text.js';
@@ -32,7 +26,7 @@ interface ComputedRecommendation {
 }
 
 const rankingExplanation =
-  'Порядок определяется косинусным сходством названий закупок. Вид закупки, сфера, деятельность и способ закупки учитываются только выбранными фильтрами. Это не проверка допуска к участию.';
+  'Порядок определяется косинусным сходством полных сведений о закупках: названия, региона, сферы, деятельности, вида и способа закупки, дат и описания. Выбранные фильтры применяются до поиска. Это не проверка допуска к участию.';
 
 function matchedFields(tender: Tender, reference: MatchingFields): string[] {
   return [
@@ -57,19 +51,17 @@ export class RecommendationService {
     repository = this.repository,
     similarFilters?: SimilarTenderFilters,
   ): Promise<ComputedRecommendation> {
-    let filters: ResolvedFilters = request
+    const { regionIds = [], ...explicitFilters } = similarFilters ?? {};
+    const filters: ResolvedFilters = request
       ? resolveFilters(request.profile, request.filters)
-      : {
-          regionMode: 'all',
-          selectedRegionIds: [],
-          regionIds: [],
-          regionNames: [],
-          ...similarFilters,
-        };
+      : resolveFilters(undefined, {
+          ...explicitFilters,
+          regionMode: regionIds.length ? 'selected' : 'all',
+          selectedRegionIds: regionIds,
+        });
     await repository.assertIndexReady();
     const source = tenderId ? ('tender' as const) : ('profile' as const);
     const selectedTender = tenderId ? await repository.get(tenderId) : undefined;
-    if (selectedTender) filters = restrictToTenderRegion(selectedTender, filters);
     const text = selectedTender ? tenderText(selectedTender) : supplierText(request!.profile);
     // Similar-tender queries must use query:, never reuse a saved passage: vector.
     const vector = await this.embeddings.embedQuery(text);
@@ -83,7 +75,8 @@ export class RecommendationService {
       : request!.profile;
     const regionalFilter = regionalDescription(filters);
     const rankingReason = selectedTender
-      ? 'Подбор ограничен регионом выбранного тендера. Выбранные фильтры применяются до поиска. Пять результатов отсортированы по сходству названий; при равенстве — по ID. Это не проверка допуска к участию.'
+      ? 'Выбираются до пяти закупок среди всех подходящих под явные фильтры города, сферы и срока подачи заявок. ' +
+        rankingExplanation
       : 'Кандидаты ограничены включёнными фильтрами профиля. ' + rankingExplanation;
     const results: Recommendation[] = matches.rows.map(({ tender, similarity }) => ({
       tender,
@@ -140,7 +133,7 @@ export class RecommendationService {
       const anchor = tenderId ?? rows[0]!.id;
       const computation = await this.compute(undefined, anchor, repository);
       return this.projectVectorSpace(rows, computation, 'tender', (tender) =>
-        computation.response.filters.regionIds.includes(tender.regionId ?? ''),
+        isEligible(tender, undefined, computation.response.filters),
       );
     });
   }

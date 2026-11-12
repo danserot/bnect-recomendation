@@ -82,6 +82,9 @@ describe('purchase analytics with real PostgreSQL, isolated schema', () => {
     expect((await repository.analytics({ ...base, selectedId, page: 2 }, now)).main).toEqual(
       result.main,
     );
+    const allRegions = await repository.analytics({ ...base, region: undefined, selectedId }, now);
+    expect(allRegions.main.price).toBeCloseTo(13000 / 60);
+    expect(allRegions.main).toMatchObject({ count: 3, volume: 60, method: 'weighted' });
   });
   test('incomplete quantities use arithmetic mean, undated rows are explicit and filters remain strict', async () => {
     const { records } = await parsePurchaseExcel(
@@ -105,8 +108,10 @@ describe('purchase analytics with real PostgreSQL, isolated schema', () => {
     expect(none.selected).toBeNull();
     expect(none.main.price).toBeNull();
     const search = await repository.analytics({ ...base, q: 'CONTROL-SELECTED', selectedId }, now);
-    expect(search.main.price).toBeNull();
-    expect(search.main.count).toBe(0);
+    expect(search.main).toEqual({ price: 120, count: 1, volume: null, method: 'arithmetic' });
+    expect(search.mainIncludesSelected).toBe(true);
+    expect(search.difference).toBeNull();
+    expect(search.buckets.find((bucket) => bucket.from === '2026-10-01')?.main.price).toBe(120);
     expect((await repository.analytics({ ...base, q: '%' }, now)).total).toBe(0);
   });
   test('API validates parameters and exposes only observed columns', async () => {

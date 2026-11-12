@@ -2,6 +2,34 @@ import { useState, type ReactNode } from 'react';
 import type { Catalog, Recommendation, Tender } from '@bnect/shared';
 
 const paths: Record<string, ReactNode> = {
+  briefcase: (
+    <>
+      <rect x="3" y="7" width="18" height="14" rx="3" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12a25 25 0 0 0 18 0M10 13v3h4v-3" />
+    </>
+  ),
+  chart: (
+    <>
+      <path d="M4 3v17h17M8 15v-4M13 15V6M18 15V9" />
+    </>
+  ),
+  network: (
+    <>
+      <circle cx="5" cy="5" r="2" />
+      <circle cx="19" cy="6" r="2" />
+      <circle cx="11" cy="13" r="2" />
+      <circle cx="5" cy="20" r="2" />
+      <circle cx="20" cy="19" r="2" />
+      <path d="m6.5 6.5 3 5m3-0.5L17.5 7M10 15l-3.5 3.5m6-4.5 6 4" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5" />
+    </>
+  ),
+  menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  filter: <path d="M4 6h16M7 12h10M10 18h4" />,
   info: (
     <>
       <circle cx="12" cy="12" r="9" />

@@ -314,10 +314,10 @@ describe('real E5 + pgvector vertical slice', () => {
     expect(result.query.text).toBe(tenderText(selected));
     expect(result.results.length).toBeLessThanOrEqual(5);
     expect(result.results.every(({ tender }) => tender.id !== selected.id)).toBe(true);
-    expect(result.results.every(({ tender }) => tender.regionId === selected.regionId)).toBe(true);
-    expect(result.filters.regionMode).toBe('selected');
-    expect(result.filters.regionIds).toEqual(selected.regionId ? [selected.regionId] : []);
-    expect(result.candidateCount).toBeLessThan(result.totalCount);
+    expect(result.results).toHaveLength(Math.min(5, result.totalCount - 1));
+    expect(result.filters.regionMode).toBe('all');
+    expect(result.filters.regionIds).toEqual([]);
+    expect(result.candidateCount).toBe(result.totalCount - 1);
   }, 60_000);
 
   test('a concurrent import cannot change the corpus halfway through a recommendation', async () => {
@@ -351,7 +351,7 @@ describe('real E5 + pgvector vertical slice', () => {
     }
   }, 60_000);
 
-  test('upsert preserves vectors for metadata changes and invalidates changed semantic content', async () => {
+  test('upsert invalidates vectors when geography or other full-row content changes', async () => {
     const original = (await post('/api/recommendations')).results[0]!.tender;
     const { rows } = await pool.query(
       'SELECT embedding::text AS vector,model_id,embedding_version,content_hash,embedded_at::text AS embedded_at FROM tenders WHERE id=$1',
@@ -368,9 +368,7 @@ describe('real E5 + pgvector vertical slice', () => {
         'SELECT id,embedding::text AS vector,embedded_at::text AS embedded_at FROM tenders WHERE external_number=$1',
         [original.externalNumber],
       );
-      expect(same.rows).toEqual([
-        { id: original.id, vector: saved.vector, embedded_at: saved.embedded_at },
-      ]);
+      expect(same.rows).toEqual([{ id: original.id, vector: null, embedded_at: null }]);
       await repository.upsertTenders([
         { ...original, title: `${original.title} (изменение предмета)` },
       ]);

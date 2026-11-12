@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { SupplierProfile, Tender } from '@bnect/shared';
+import { regions } from './data/regions.js';
 
-export const SEMANTIC_TEXT_VERSION = 'title-only-v1';
+export const SEMANTIC_TEXT_VERSION = 'full-row-v1';
 const normalize = (text: string) => text.normalize('NFKC').replace(/\s+/g, ' ').trim();
+const regionNames = new Map(regions.map(({ id, name }) => [id, name]));
 /** Object names are presentation metadata, not the subject of the purchase. */
 export function projectKey(title: string): string | undefined {
   const text = normalize(title);
@@ -39,7 +41,29 @@ export function workSubject(title: string): string {
 }
 
 export function tenderText(tender: Tender): string {
-  return workSubject(tender.title) || normalize(tender.title);
+  const fields = [
+    ['Название', tender.title],
+    [
+      'Регион',
+      tender.regionId ? (regionNames.get(tender.regionId) ?? tender.regionId) : 'Не указан',
+    ],
+    ['Сфера', tender.industryGroup],
+    ['Деятельность', tender.activity],
+    ['Вид закупки', tender.procurementType],
+    ['Способ закупки', tender.procurementMethod],
+    ['Дата создания', new Date(tender.createdAt).toISOString()],
+    ['Статус', tender.status === 'open' ? 'Открыта' : tender.status === 'closed' ? 'Закрыта' : ''],
+    [
+      'Срок подачи заявок',
+      tender.applicationDeadline ? new Date(tender.applicationDeadline).toISOString() : '',
+    ],
+    // Keep long descriptions last so they cannot displace the structured fields.
+    ['Описание', tender.description],
+  ];
+  return fields
+    .filter(([, value]) => value?.trim())
+    .map(([label, value]) => `${label}: ${normalize(value!)}`)
+    .join('\n');
 }
 
 export function supplierText(profile: SupplierProfile): string {

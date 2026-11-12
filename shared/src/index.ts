@@ -27,7 +27,11 @@ export interface SupplierProfile {
   serviceRegionIds: string[];
   procurementTypes: string[];
 }
-export interface RecommendationFilters {
+export interface DeadlineFilters {
+  deadlineFrom?: string;
+  deadlineTo?: string;
+}
+export interface RecommendationFilters extends DeadlineFilters {
   regionMode: 'supplier' | 'selected' | 'all';
   selectedRegionIds: string[];
   industryGroups?: string[];
@@ -36,13 +40,14 @@ export interface RecommendationFilters {
   procurementMethods?: string[];
   applySupplierIndustryGroups?: boolean;
   applySupplierProcurementTypes?: boolean;
-  onlyOpen?: boolean;
 }
-export interface SimilarTenderFilters {
+export interface SimilarTenderFilters extends DeadlineFilters {
+  regionIds?: string[];
   industryGroups?: string[];
   activities?: string[];
   procurementTypes?: string[];
   procurementMethods?: string[];
+  onlyOpen?: boolean;
 }
 export interface RecommendationRequest {
   profile: SupplierProfile;
@@ -86,6 +91,7 @@ export interface Catalog {
   activities: string[];
   procurementTypes: string[];
   procurementMethods: string[];
+  deadlineCount: number;
   demoNow: string;
   model: { id: string; dimensions: number; embeddingVersion: string };
 }
@@ -116,3 +122,4 @@ export interface ApiError {
 }
 export * from './analytics.js';
 export * from './import.js';
+export * from './model.js';

@@ -66,7 +66,14 @@ interface ComparisonInput {
 type CatalogResult = Pick<PurchaseAnalytics, 'items' | 'total' | 'page' | 'pageSize' | 'selected'>;
 type ComparisonResult = Pick<
   PurchaseAnalytics,
-  'main' | 'comparison' | 'difference' | 'reason' | 'undated' | 'buckets' | 'period'
+  | 'main'
+  | 'mainIncludesSelected'
+  | 'comparison'
+  | 'difference'
+  | 'reason'
+  | 'undated'
+  | 'buckets'
+  | 'period'
 >;
 
 const IMPORT_BATCH_SIZE = 500;
@@ -174,20 +181,62 @@ function toAggregate(row: PriceAggregate): PriceAggregate {
   return { price: row.price, count: row.count, volume: row.volume, method: row.method };
 }
 
+/** Use the selected price as a one-observation mean only when no independent mean exists. */
+function selectedOnlyAverage<T extends ComparisonResult>(
+  result: T,
+  selected: Purchase,
+  problem?: string | null,
+): T {
+  const price = selected.unitPrice;
+  if (price === null || !Number.isFinite(price) || price <= 0) return result;
+  result.main = { price, count: 1, volume: null, method: 'arithmetic' };
+  result.mainIncludesSelected = true;
+  result.difference = null;
+  result.reason = problem ?? null;
+  if (!selected.date) {
+    result.undated++;
+    return result;
+  }
+  if (!result.buckets.length) {
+    const first = result.period.from ?? selected.date;
+    const last = result.period.from ? result.period.to : selected.date;
+    const grouping = chartGrouping(first, last, 1);
+    result.period.grouping = grouping;
+    result.buckets = priceBuckets({
+      first,
+      last,
+      grouping,
+      period: result.period,
+      mainRegion: '',
+      aggregates: new Map(),
+    });
+  }
+  const bucket = result.buckets.find(
+    (item) => item.from <= selected.date! && selected.date! <= item.to,
+  );
+  if (bucket) bucket.main = result.main;
+  return result;
+}
+
 async function readComparison(
   client: pg.PoolClient,
   input: ComparisonInput,
 ): Promise<ComparisonResult> {
-  const { selected, key, mainRegion, comparisonRegion, filters, period } = input;
+  const { selected, key, mainRegion, filters, period } = input;
+  const comparisonRegion = mainRegion ? input.comparisonRegion : undefined;
   const values = [...filters.values];
   const keyParam = `$${values.push(key)}`;
   const selectedParam = `$${values.push(selected.number)}`;
-  const regionsParam = `$${values.push([mainRegion, ...(comparisonRegion ? [comparisonRegion] : [])])}`;
-  const eligible = `${filters.where} AND compatibility_key=${keyParam} AND data->>'number'<>${selectedParam} AND region=ANY(${regionsParam}::text[]) AND unit_price>0`;
+  const regionFilter = mainRegion
+    ? ` AND region=ANY($${values.push([mainRegion, ...(comparisonRegion ? [comparisonRegion] : [])])}::text[])`
+    : '';
+  const eligible = `${filters.where} AND compatibility_key=${keyParam} AND data->>'number'<>${selectedParam}${regionFilter} AND unit_price>0`;
+  const regionColumn = mainRegion ? 'region' : "''::text AS region";
+  const regionGroup = mainRegion ? ',region' : '';
   const summary = await client.query<RegionAggregateRow>(
-    `SELECT region,${aggregateSql},
+    `SELECT ${regionColumn},${aggregateSql},
      count(*) FILTER (WHERE purchased_on IS NULL)::int AS undated
-     FROM analytics_purchases WHERE ${eligible} GROUP BY region`,
+     FROM analytics_purchases WHERE ${eligible}${mainRegion ? ' GROUP BY region' : ''}`,
     values,
   );
   const mainRow = summary.rows.find((row) => row.region === mainRegion);
@@ -195,6 +244,7 @@ async function readComparison(
   const main = mainRow ? toAggregate(mainRow) : emptyAggregate();
   const result: ComparisonResult = {
     main,
+    mainIncludesSelected: false,
     comparison: comparisonRegion
       ? comparisonRow
         ? toAggregate(comparisonRow)
@@ -226,9 +276,9 @@ async function readComparison(
 
   const grouping = chartGrouping(first, last, observed.count);
   const buckets = await client.query<BucketAggregateRow>(
-    `SELECT date_trunc('${grouping}',purchased_on)::date::text AS bucket,region,${aggregateSql}
+    `SELECT date_trunc('${grouping}',purchased_on)::date::text AS bucket,${regionColumn},${aggregateSql}
      FROM analytics_purchases WHERE ${eligible} AND purchased_on IS NOT NULL
-     GROUP BY bucket,region ORDER BY bucket`,
+     GROUP BY bucket${regionGroup} ORDER BY bucket`,
     values,
   );
   result.period.grouping = grouping;
@@ -354,6 +404,7 @@ export class PurchaseRepository {
         const answer: PurchaseAnalytics = {
           ...catalog,
           main: emptyAggregate(),
+          mainIncludesSelected: false,
           comparison: query.comparisonRegion ? emptyAggregate() : null,
           difference: null,
           reason: selected
@@ -363,20 +414,22 @@ export class PurchaseRepository {
           buckets: [],
           undated: 0,
         };
-        if (!selected || answer.reason) return answer;
-        if (!query.region) return { ...answer, reason: 'Выберите основной регион для расчёта.' };
-
+        if (!selected) return answer;
+        if (answer.reason) return selectedOnlyAverage(answer, selected, answer.reason);
         const key = compatibilityKey(selected);
         if (!key) return answer;
         const comparison = await readComparison(client, {
           selected,
           key,
-          mainRegion: query.region,
+          mainRegion: query.region ?? '',
           comparisonRegion: query.comparisonRegion,
           filters,
           period,
         });
-        return { ...answer, ...comparison };
+        return {
+          ...answer,
+          ...(comparison.main.count ? comparison : selectedOnlyAverage(comparison, selected)),
+        };
       },
       true,
     );
