@@ -264,10 +264,11 @@ public sealed class MultilingualE5EmbeddingModel : IEmbeddingModel, IDisposable
 
     public MultilingualE5EmbeddingModel()
     {
-        var root = AppContext.BaseDirectory;
-        var modelPath = Path.Combine(root, "models", "Xenova", "multilingual-e5-small",
+        var root = Environment.GetEnvironmentVariable("EMBEDDING_MODEL_DIR")
+            ?? Path.Combine(AppContext.BaseDirectory, "models");
+        var modelPath = Path.Combine(root, "Xenova", "multilingual-e5-small",
             "761b726", "onnx", "model_quantized.onnx");
-        var tokenizerPath = Path.Combine(root, "models", "Xenova", "multilingual-e5-small",
+        var tokenizerPath = Path.Combine(root, "Xenova", "multilingual-e5-small",
             "761b726", "tokenizer.json");
         session = new InferenceSession(modelPath);
         using var document = JsonDocument.Parse(File.ReadAllText(tokenizerPath));

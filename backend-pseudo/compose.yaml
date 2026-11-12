@@ -5,6 +5,8 @@ services:
       dockerfile: backend-pseudo/Dockerfile
     ports:
       - "5080:8080"
+    volumes:
+      - ./models:/models:ro
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080

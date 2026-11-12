@@ -3,8 +3,8 @@
 Эта папка изолирована от существующего TypeScript backend. Это рабочий каркас
 архитектуры для последующей замены на настоящий ASP.NET Core сервис: он не
 подключается к текущему `compose.yaml`, не меняет существующие таблицы и
-использует in-memory данные вместо реальных БД, но уже содержит локальные
-ONNX-веса `multilingual-e5-small`.
+использует in-memory данные вместо реальных БД и загружает локальные ONNX-веса
+из внешнего каталога моделей.
 
 ## Что демонстрирует каркас
 
@@ -23,7 +23,7 @@ ONNX-веса `multilingual-e5-small`.
 
 ## Локальная embedding-модель
 
-Модель скопирована из основного проекта в
+Модель должна находиться во внешнем каталоге
 `models/Xenova/multilingual-e5-small/761b726/`:
 
 - `onnx/model_quantized.onnx` — CPU Q8-веса;
@@ -39,6 +39,12 @@ ONNX-веса `multilingual-e5-small`.
 `tokenizer.json`. Перед production-сравнением с текущим TypeScript backend нужно
 заменить его на точный Hugging Face/SentencePiece tokenizer: нормализация и
 Viterbi-разбиение должны полностью совпадать с исходным Transformers.js.
+
+Файл `model_quantized.onnx` не хранится в Git, потому что его размер превышает
+лимит GitHub 100 МБ. Скопируйте модель из основного проекта или скачайте её
+вне репозитория в каталог `backend-pseudo/models`. Для Docker Compose этот
+каталог монтируется в контейнер как `/models:ro`. Можно указать другой путь
+через переменную `EMBEDDING_MODEL_DIR`.
 
 ## Что заменить перед подключением
 
@@ -63,7 +69,10 @@ curl http://localhost:5080/api/tenders/internal-1/similar
 
 ```powershell
 docker build -f backend-pseudo/Dockerfile -t bnect-pseudo-backend .
-docker run --rm -p 5080:8080 bnect-pseudo-backend
+docker run --rm -p 5080:8080 `
+  -e EMBEDDING_MODEL_DIR=/models `
+  -v "${PWD}\backend-pseudo\models:/models:ro" `
+  bnect-pseudo-backend
 ```
 
 Это именно псевдо-бэкенд: его задача показать границы модулей и контракт
