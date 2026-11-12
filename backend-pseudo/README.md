@@ -3,7 +3,8 @@
 Эта папка изолирована от существующего TypeScript backend. Это рабочий каркас
 архитектуры для последующей замены на настоящий ASP.NET Core сервис: он не
 подключается к текущему `compose.yaml`, не меняет существующие таблицы и
-использует in-memory данные вместо реальных БД и embedding-весов.
+использует in-memory данные вместо реальных БД, но уже содержит локальные
+ONNX-веса `multilingual-e5-small`.
 
 ## Что демонстрирует каркас
 
@@ -16,16 +17,36 @@
   пятью строками;
 - `POST /api/tenders` имитирует создание тендера и запись векторного индекса;
 - `POST /api/maintenance/cleanup-expired` удаляет просроченные векторы;
+- локальная модель `Xenova/multilingual-e5-small` выполняется через ONNX Runtime
+  CPU и возвращает 384-мерные нормализованные векторы;
 - Dockerfile готовит отдельный контейнер, но не запускается автоматически.
+
+## Локальная embedding-модель
+
+Модель скопирована из основного проекта в
+`models/Xenova/multilingual-e5-small/761b726/`:
+
+- `onnx/model_quantized.onnx` — CPU Q8-веса;
+- `tokenizer.json` и `tokenizer_config.json` — словарь и настройки токенизации;
+- `config.json` — конфигурация модели.
+
+Префикс `query:` используется для исходного тендера, а `passage:` — для
+тендеров-кандидатов. После ONNX-инференса выполняется mean pooling и L2
+нормализация, поэтому cosine similarity можно считать обычным скалярным
+произведением.
+
+Для компактности .NET-каркас использует управляемый адаптер unigram-словаря из
+`tokenizer.json`. Перед production-сравнением с текущим TypeScript backend нужно
+заменить его на точный Hugging Face/SentencePiece tokenizer: нормализация и
+Viterbi-разбиение должны полностью совпадать с исходным Transformers.js.
 
 ## Что заменить перед подключением
 
 1. `InMemoryTenderSource` заменить на два адаптера PostgreSQL или HTTP API.
    Для production нужны разные connection strings:
    `INTERNAL_DATABASE_URL` и `PARTNER_DATABASE_URL`.
-2. `DeterministicEmbeddingModel` заменить на ONNX/Hugging Face модель с
-   фиксированной размерностью и версией. Веса следует монтировать в
-   `/models`, а не хранить в Git.
+2. `MultilingualE5EmbeddingModel` подключить к production-хранилищу моделей
+   `/models` вместо поставки больших весов вместе с исходным кодом.
 3. В `TenderRecord` согласовать реальные названия полей и внешний ID.
 4. Добавить миграцию `pgvector` с колонкой `vector(384)`, индексом и
    метаданными `model_id`, `embedding_version`, `embedded_at`.

@@ -1,5 +1,7 @@
-using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime.Tensors;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,7 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 // внутреннюю базу платформы и базу партнера.
 builder.Services.AddSingleton<ITenderSource>(new InMemoryTenderSource("internal"));
 builder.Services.AddSingleton<ITenderSource>(new InMemoryTenderSource("partner"));
-builder.Services.AddSingleton<IEmbeddingModel, DeterministicEmbeddingModel>();
+builder.Services.AddSingleton<IEmbeddingModel, MultilingualE5EmbeddingModel>();
 builder.Services.AddSingleton<RecommendationService>();
 
 var app = builder.Build();
@@ -44,7 +46,7 @@ app.MapPost("/api/tenders", async (
 {
     var stored = tender with
     {
-        Embedding = await model.CreateAsync(tender.SearchText, cancellationToken),
+        Embedding = await model.CreateAsync(tender.SearchText, isQuery: false, cancellationToken: cancellationToken),
         EmbeddedAt = DateTimeOffset.UtcNow
     };
     var target = sources.Single(source =>
@@ -107,7 +109,7 @@ public interface ITenderSource
 
 public interface IEmbeddingModel
 {
-    Task<float[]> CreateAsync(string text, CancellationToken cancellationToken);
+    Task<float[]> CreateAsync(string text, bool isQuery, CancellationToken cancellationToken);
     object Describe();
 }
 
@@ -127,7 +129,7 @@ public sealed class RecommendationService(
         if (anchor is null) return null;
 
         // Вектор исходного тендера используется как поисковый запрос.
-        var query = await model.CreateAsync(anchor.SearchText, cancellationToken);
+        var query = await model.CreateAsync(anchor.SearchText, isQuery: true, cancellationToken: cancellationToken);
         // Каждый источник самостоятельно применяет фильтр активных тендеров.
         var activeBySource = await Task.WhenAll(
             sources.Select(source => source.GetActiveAsync(now, cancellationToken)));
@@ -140,7 +142,7 @@ public sealed class RecommendationService(
                 ? item
                 : item with
             {
-                Embedding = await model.CreateAsync(item.SearchText, cancellationToken),
+                Embedding = await model.CreateAsync(item.SearchText, isQuery: false, cancellationToken: cancellationToken),
                 EmbeddedAt = now
             };
             if (item.Embedding is null)
@@ -253,32 +255,94 @@ public sealed class InMemoryTenderSource : ITenderSource
             DateTimeOffset.UtcNow.AddDays(30), "open");
 }
 
-public sealed class DeterministicEmbeddingModel : IEmbeddingModel
+public sealed class MultilingualE5EmbeddingModel : IEmbeddingModel, IDisposable
 {
-    public const int Dimensions = 32;
+    public const int Dimensions = 384;
+    private const int MaxTokens = 512;
+    private readonly InferenceSession session;
+    private readonly Dictionary<string, int> vocabulary;
 
-    // Это не настоящая ML-модель, а повторяемая заглушка для демонстрации API.
-    // В production заменить на ONNX/Hugging Face и хранить версию модели
-    // вместе с каждым вектором для безопасной переиндексации.
-    public Task<float[]> CreateAsync(string text, CancellationToken cancellationToken)
+    public MultilingualE5EmbeddingModel()
     {
+        var root = AppContext.BaseDirectory;
+        var modelPath = Path.Combine(root, "models", "Xenova", "multilingual-e5-small",
+            "761b726", "onnx", "model_quantized.onnx");
+        var tokenizerPath = Path.Combine(root, "models", "Xenova", "multilingual-e5-small",
+            "761b726", "tokenizer.json");
+        session = new InferenceSession(modelPath);
+        using var document = JsonDocument.Parse(File.ReadAllText(tokenizerPath));
+        vocabulary = document.RootElement.GetProperty("model").GetProperty("vocab")
+            .EnumerateArray()
+            .Select((item, id) => new { Piece = item[0].GetString()!, Id = id })
+            .ToDictionary(item => item.Piece, item => item.Id, StringComparer.Ordinal);
+    }
+
+    public Task<float[]> CreateAsync(string text, bool isQuery, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var ids = Encode((isQuery ? "query: " : "passage: ") + text);
+        var inputIds = new DenseTensor<long>(new[] { 1, ids.Length });
+        var attentionMask = new DenseTensor<long>(new[] { 1, ids.Length });
+        var tokenTypeIds = new DenseTensor<long>(new[] { 1, ids.Length });
+        for (var i = 0; i < ids.Length; i++)
+        {
+            inputIds[0, i] = ids[i];
+            attentionMask[0, i] = 1;
+            tokenTypeIds[0, i] = 0;
+        }
+
+        using var results = session.Run(new[]
+        {
+            NamedOnnxValue.CreateFromTensor("input_ids", inputIds),
+            NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask),
+            NamedOnnxValue.CreateFromTensor("token_type_ids", tokenTypeIds)
+        });
+        var hidden = results.First().AsTensor<float>();
         var vector = new float[Dimensions];
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text.Trim()));
-        for (var i = 0; i < vector.Length; i++)
-            vector[i] = (bytes[i % bytes.Length] - 128) / 128f;
-        // Нормализация нужна для корректного сравнения cosine similarity.
+        for (var token = 0; token < ids.Length; token++)
+            for (var dimension = 0; dimension < Dimensions; dimension++)
+                vector[dimension] += hidden[0, token, dimension];
         var norm = Math.Sqrt(vector.Sum(value => value * value));
         if (norm > 0)
-            for (var i = 0; i < vector.Length; i++)
-                vector[i] = (float)(vector[i] / norm);
+            for (var dimension = 0; dimension < Dimensions; dimension++)
+                vector[dimension] = (float)(vector[dimension] / norm);
         return Task.FromResult(vector);
     }
 
     public object Describe() => new
     {
-        id = "pseudo-deterministic",
+        id = "Xenova/multilingual-e5-small",
+        revision = "761b726",
         dimensions = Dimensions,
-        productionReplacement = "ONNX/HuggingFace multilingual-e5-small",
-        warning = "Это детерминированная заглушка, не ML-модель."
+        runtime = "ONNX Runtime CPU",
+        quantization = "q8",
+        prefixes = new[] { "query:", "passage:" },
+        maxTokens = MaxTokens
     };
+
+    public void Dispose() => session.Dispose();
+
+    private long[] Encode(string text)
+    {
+        var normalized = "▁" + text.Trim().Replace(' ', '▁');
+        var ids = new List<long> { vocabulary["<s>"] };
+        for (var position = 0; position < normalized.Length && ids.Count < MaxTokens - 1;)
+        {
+            var match = normalized.Length - position;
+            while (match > 0 && !vocabulary.ContainsKey(normalized.Substring(position, match)))
+                match--;
+            if (match == 0)
+            {
+                ids.Add(vocabulary["<unk>"]);
+                position++;
+            }
+            else
+            {
+                ids.Add(vocabulary[normalized.Substring(position, match)]);
+                position += match;
+            }
+        }
+        ids.Add(vocabulary["</s>"]);
+        return ids.ToArray();
+    }
 }

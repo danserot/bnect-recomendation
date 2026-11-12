@@ -5,4 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="0.22.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="models\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
