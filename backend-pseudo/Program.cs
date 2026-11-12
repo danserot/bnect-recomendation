@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Два экземпляра одного адаптера имитируют две независимые базы:
+// внутреннюю базу платформы и базу партнера.
 builder.Services.AddSingleton<ITenderSource>(new InMemoryTenderSource("internal"));
 builder.Services.AddSingleton<ITenderSource>(new InMemoryTenderSource("partner"));
 builder.Services.AddSingleton<IEmbeddingModel, DeterministicEmbeddingModel>();
@@ -9,6 +12,7 @@ builder.Services.AddSingleton<RecommendationService>();
 
 var app = builder.Build();
 
+// Техническая проверка доступности сервиса и подключенных источников.
 app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "ok",
@@ -16,8 +20,11 @@ app.MapGet("/api/health", () => Results.Ok(new
     sources = new[] { "internal", "partner" }
 }));
 
+// Возвращает сведения о текущей embedding-модели.
 app.MapGet("/api/model", (IEmbeddingModel model) => Results.Ok(model.Describe()));
 
+// При открытии страницы тендера этот endpoint строит подборку похожих
+// тендеров из обеих баз и возвращает не более пяти результатов.
 app.MapGet("/api/tenders/{id}/similar", async (
     string id,
     RecommendationService service,
@@ -27,6 +34,8 @@ app.MapGet("/api/tenders/{id}/similar", async (
     return result is null ? Results.NotFound() : Results.Ok(result);
 });
 
+// Создание тендера: сначала формируется вектор текста, затем запись сохраняется
+// в соответствующий источник. В production здесь будет транзакция БД.
 app.MapPost("/api/tenders", async (
     TenderRecord tender,
     IEnumerable<ITenderSource> sources,
@@ -44,6 +53,8 @@ app.MapPost("/api/tenders", async (
     return Results.Created($"/api/tenders/{stored.Id}", stored);
 });
 
+// Планировщик должен вызывать этот endpoint ежедневно. Просроченные векторы
+// удаляются, чтобы они не участвовали в будущих рекомендациях.
 app.MapPost("/api/maintenance/cleanup-expired", (
     IEnumerable<ITenderSource> sources) =>
 {
@@ -63,6 +74,7 @@ public sealed record TenderRecord(
     float[]? Embedding = null,
     DateTimeOffset? EmbeddedAt = null)
 {
+    // Активным считается только открытый тендер с будущим сроком подачи.
     public bool IsActive(DateTimeOffset now) =>
         Status.Equals("open", StringComparison.OrdinalIgnoreCase) &&
         ApplicationDeadline > now;
@@ -108,15 +120,20 @@ public sealed class RecommendationService(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // Ищем исходный тендер в обоих источниках одновременно.
         var anchorResults = await Task.WhenAll(
             sources.Select(source => source.GetAsync(id, cancellationToken)));
         var anchor = anchorResults.FirstOrDefault(item => item is not null);
         if (anchor is null) return null;
 
+        // Вектор исходного тендера используется как поисковый запрос.
         var query = await model.CreateAsync(anchor.SearchText, cancellationToken);
+        // Каждый источник самостоятельно применяет фильтр активных тендеров.
         var activeBySource = await Task.WhenAll(
             sources.Select(source => source.GetActiveAsync(now, cancellationToken)));
         var active = new List<TenderRecord>();
+        // Для старых записей, у которых еще нет вектора, создаем его лениво.
+        // При реальной интеграции это обычно выполняется фоновой очередью.
         foreach (var item in activeBySource.SelectMany(items => items))
         {
             var stored = item.Embedding is not null
@@ -135,6 +152,8 @@ public sealed class RecommendationService(
             active.Add(stored);
         }
 
+        // Объединяем результаты двух баз, исключаем исходный тендер,
+        // сортируем по косинусной близости и оставляем топ-5.
         var results = active
             .Where(item => item.Id != id && item.Embedding is { Length: > 0 })
             .Select(item => new SimilarTender(item, Cosine(query, item.Embedding!), item.Source))
@@ -146,6 +165,8 @@ public sealed class RecommendationService(
         return new SimilarResponse(id, now, results);
     }
 
+    // Для нормализованных векторов cosine similarity показывает семантическую
+    // близость: чем значение ближе к 1, тем тексты похожее.
     private static double Cosine(float[] left, float[] right)
     {
         if (left.Length != right.Length || left.Length == 0) return 0;
@@ -186,6 +207,8 @@ public sealed class InMemoryTenderSource : ITenderSource
 
     public string Name { get; }
 
+    // В production этот метод должен выполнять SQL/API-запрос с фильтром:
+    // status = 'open' AND application_deadline > current_timestamp.
     public Task<IReadOnlyList<TenderRecord>> GetActiveAsync(
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -202,12 +225,15 @@ public sealed class InMemoryTenderSource : ITenderSource
         return Task.FromResult(tender);
     }
 
+    // Сейчас запись хранится в памяти; здесь будет INSERT/UPDATE в конкретную БД.
     public Task UpsertAsync(TenderRecord tender, CancellationToken cancellationToken)
     {
         tenders[tender.Id] = tender;
         return Task.CompletedTask;
     }
 
+    // Обнуляем только embedding-данные просроченных тендеров, сам тендер
+    // остается в каталоге и может быть нужен для истории.
     public int RemoveExpiredVectors(DateTimeOffset now)
     {
         var keys = tenders.Values
@@ -231,12 +257,16 @@ public sealed class DeterministicEmbeddingModel : IEmbeddingModel
 {
     public const int Dimensions = 32;
 
+    // Это не настоящая ML-модель, а повторяемая заглушка для демонстрации API.
+    // В production заменить на ONNX/Hugging Face и хранить версию модели
+    // вместе с каждым вектором для безопасной переиндексации.
     public Task<float[]> CreateAsync(string text, CancellationToken cancellationToken)
     {
         var vector = new float[Dimensions];
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text.Trim()));
         for (var i = 0; i < vector.Length; i++)
             vector[i] = (bytes[i % bytes.Length] - 128) / 128f;
+        // Нормализация нужна для корректного сравнения cosine similarity.
         var norm = Math.Sqrt(vector.Sum(value => value * value));
         if (norm > 0)
             for (var i = 0; i < vector.Length; i++)
