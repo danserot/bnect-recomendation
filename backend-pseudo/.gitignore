@@ -1,3 +1,3 @@
 bin/
 obj/
-models/
+models/**/onnx/model_quantized.onnx
